@@ -1,9 +1,9 @@
 @import "tailwindcss";
 
 :root {
-  background-color: #0b0f19; /* dark vaporwave base */
+  background-color: #0b0f19;
   color: #fff;
-  font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;
+  font-family: 'Exo 2', system-ui, sans-serif;
   line-height: 1.5;
   font-weight: 400;
 }
@@ -25,7 +25,12 @@ body {
   flex-direction: column;
 }
 
-/* Custom UI styling based on the Fitbod / SuperGainz requirement */
+/* ── Orbitron for display headings ── */
+.font-display {
+  font-family: 'Orbitron', sans-serif;
+}
+
+/* ── Neon aesthetics ── */
 .neon-border {
   border: 1px solid #ff007f;
   box-shadow: 0 0 10px #ff007f, inset 0 0 5px #ff007f;
@@ -33,10 +38,67 @@ body {
 
 .neon-text-pink {
   color: #ff007f;
-  text-shadow: 0 0 5px #ff007f;
+  text-shadow: 0 0 8px #ff007f, 0 0 20px #ff007f44;
 }
 
 .neon-text-cyan {
   color: #00ffff;
-  text-shadow: 0 0 5px #00ffff;
+  text-shadow: 0 0 8px #00ffff, 0 0 20px #00ffff44;
+}
+
+/* ── Scanline overlay (apply to full-screen containers) ── */
+.scanlines::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    rgba(0, 0, 0, 0.08) 2px,
+    rgba(0, 0, 0, 0.08) 4px
+  );
+  pointer-events: none;
+  z-index: 10;
+}
+
+/* ── Tron grid background ── */
+.tron-grid {
+  background-image:
+    linear-gradient(rgba(0, 255, 255, 0.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0, 255, 255, 0.04) 1px, transparent 1px);
+  background-size: 40px 40px;
+}
+
+/* ── Glow pulse animation ── */
+@keyframes glow-pulse {
+  0%, 100% { box-shadow: 0 0 10px #ff007f44, 0 0 20px #ff007f22; }
+  50%       { box-shadow: 0 0 20px #ff007f88, 0 0 40px #ff007f44; }
+}
+
+.glow-pulse {
+  animation: glow-pulse 2.5s ease-in-out infinite;
+}
+
+/* ── Neon flicker (subtle) ── */
+@keyframes flicker {
+  0%, 95%, 100% { opacity: 1; }
+  96%            { opacity: 0.85; }
+  97%            { opacity: 1; }
+  98%            { opacity: 0.9; }
+}
+
+.neon-flicker {
+  animation: flicker 6s infinite;
+}
+
+/* ── Chart line draw animation ── */
+@keyframes drawLine {
+  from { stroke-dashoffset: 1000; }
+  to   { stroke-dashoffset: 0; }
+}
+
+.recharts-line-curve {
+  stroke-dasharray: 1000;
+  animation: drawLine 1.2s ease-out forwards;
 }
