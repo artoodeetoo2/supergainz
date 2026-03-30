@@ -159,6 +159,9 @@ export default function Home({ userId, userName }: HomeProps) {
           </div>
         )}
       </div>
+      <p className="text-gray-700 text-[10px] uppercase tracking-widest text-center py-4 font-display">
+        v0.1.0
+      </p>
       </div>
     </div>
   );

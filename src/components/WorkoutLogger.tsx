@@ -37,6 +37,16 @@ interface WorkoutLoggerProps {
   userId: string;
 }
 
+const ZYZZ_GIFS = [
+  "/gifs/zyzz-dancing.webp",
+  "/gifs/zyzz-flexing.webp",
+  "/gifs/zyzz-mirin.webp",
+];
+
+function randomGif() {
+  return ZYZZ_GIFS[Math.floor(Math.random() * ZYZZ_GIFS.length)];
+}
+
 const ZYZZ_QUOTES = [
   "We're all gonna make it, brah.",
   "Dream big, lift bigger.",
@@ -139,6 +149,7 @@ export default function WorkoutLogger({ userId }: WorkoutLoggerProps) {
   const [finished, setFinished] = useState(false);
   const [saving, setSaving] = useState(false);
   const [quote] = useState(randomQuote);
+  const [gif] = useState(randomGif);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [aiSuggestions, setAiSuggestions] = useState<Record<number, string>>({});
   const [aiLoading, setAiLoading] = useState<Record<number, boolean>>({});
@@ -313,11 +324,17 @@ Reply in 1-2 short sentences. Give a specific weight in kg. Be direct and motiva
   if (finished) {
     return (
       <div className="flex flex-col items-center justify-center min-h-screen p-6 bg-[#0b0f19]">
-        <div className="bg-[#141a29] border border-purple-900 rounded-2xl p-8 w-full max-w-md text-center">
-          <p className="text-4xl mb-4">💪</p>
-          <h2 className="text-2xl font-black text-white mb-1">Workout Complete!</h2>
-          <p className="text-gray-400 mb-4">Great session, keep pushing.</p>
-          <p className="neon-text-pink italic font-semibold text-sm mb-6">"{quote}"</p>
+        <div className="bg-[#141a29] border border-purple-900 rounded-2xl overflow-hidden w-full max-w-md text-center">
+          <img
+            src={gif}
+            alt="Zyzz"
+            className="w-full object-cover"
+            style={{ height: "220px", objectPosition: "center 20%" }}
+          />
+          <div className="p-8">
+          <h2 className="text-2xl font-black font-display neon-text-pink uppercase tracking-widest mb-1">Workout Complete!</h2>
+          <p className="text-gray-400 mb-4 text-sm">Great session, keep pushing.</p>
+          <p className="neon-text-cyan italic font-semibold text-sm mb-6">"{quote}"</p>
 
           <div className="flex justify-around mb-8">
             <div>
@@ -339,6 +356,7 @@ Reply in 1-2 short sentences. Give a specific weight in kg. Be direct and motiva
           >
             Back to Home
           </button>
+          </div>
         </div>
       </div>
     );
