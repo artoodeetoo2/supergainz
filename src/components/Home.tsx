@@ -117,7 +117,7 @@ export default function Home({ userId, userName }: HomeProps) {
                 className="bg-[#141a29] border border-purple-900 rounded-2xl p-4 flex items-center justify-between gap-3"
               >
                 <div className="flex-1 min-w-0">
-                  <p className="text-white font-bold truncate">{program.name}</p>
+                  <p className="font-black uppercase tracking-wider truncate font-display neon-text-cyan" style={{ fontSize: "13px" }}>{program.name}</p>
                   <div className="flex gap-2 mt-2 flex-wrap">
                     {program.muscleGroups.map((mg) => {
                       const icon = MUSCLE_ICONS[mg];

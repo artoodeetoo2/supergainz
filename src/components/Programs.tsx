@@ -118,18 +118,6 @@ const defaultExerciseForm = {
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
-// Small inline pill — used inside exercise rows
-function MuscleTag({ group }: { group: string }) {
-  const colors = MUSCLE_GROUP_COLORS[group] ?? "bg-gray-800/50 text-gray-300 border-gray-600";
-  const icon = MUSCLE_ICONS[group];
-  return (
-    <span className={`flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider pl-0.5 pr-2 py-0.5 rounded-full border ${colors}`}>
-      {icon && <img src={icon} alt={group} className="w-4 h-4 rounded-full object-cover object-top" />}
-      {group}
-    </span>
-  );
-}
-
 // Large icon + label — used in program cards & detail header
 function MuscleIconStack({ groups }: { groups: string[] }) {
   return (
@@ -178,7 +166,7 @@ export default function Programs({ userId }: ProgramsProps) {
   const [coachStep, setCoachStep] = useState<CoachStep | null>(null);
   const [coachGoal, setCoachGoal] = useState("");
   const [coachExperience, setCoachExperience] = useState("");
-  const [coachStrength, setCoachStrength] = useState("");
+  const [_coachStrength, setCoachStrength] = useState("");
   const [coachResults, setCoachResults] = useState<ProgramExercise[]>([]);
 
   // Add exercise form (detail view)

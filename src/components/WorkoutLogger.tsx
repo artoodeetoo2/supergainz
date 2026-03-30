@@ -1,8 +1,9 @@
 import { useState, useEffect, useRef } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
-import { ChevronLeft, Check, Plus } from "lucide-react";
-import { collection, addDoc } from "firebase/firestore";
+import { ChevronLeft, Check, Plus, Sparkles } from "lucide-react";
+import { collection, addDoc, getDocs, orderBy, query, limit } from "firebase/firestore";
 import { db } from "../firebase";
+import Anthropic from "@anthropic-ai/sdk";
 
 interface ProgramExercise {
   name: string;
@@ -139,6 +140,8 @@ export default function WorkoutLogger({ userId }: WorkoutLoggerProps) {
   const [saving, setSaving] = useState(false);
   const [quote] = useState(randomQuote);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [aiSuggestions, setAiSuggestions] = useState<Record<number, string>>({});
+  const [aiLoading, setAiLoading] = useState<Record<number, boolean>>({});
 
   // Redirect if no program
   useEffect(() => {
@@ -220,12 +223,67 @@ export default function WorkoutLogger({ userId }: WorkoutLoggerProps) {
     );
   }
 
+  async function suggestWeight(exIdx: number, exerciseName: string) {
+    setAiLoading((prev) => ({ ...prev, [exIdx]: true }));
+    setAiSuggestions((prev) => ({ ...prev, [exIdx]: "" }));
+    try {
+      const q = query(
+        collection(db, `users/${userId}/workouts`),
+        orderBy("date", "desc"),
+        limit(6)
+      );
+      const snap = await getDocs(q);
+      const history: { date: string; sets: { reps: number; weight: number; completed: boolean }[] }[] = [];
+      snap.docs.forEach((d) => {
+        const w = d.data();
+        const ex = (w.exercises as ActiveExercise[]).find((e) => e.name === exerciseName);
+        if (ex) {
+          history.push({ date: w.date, sets: ex.sets });
+        }
+      });
+
+      const currentSets = activeExercises[exIdx].sets;
+      const historyText = history.length === 0
+        ? "No previous history for this exercise."
+        : history.slice(0, 4).map((h, i) => {
+            const doneSets = h.sets.filter((s) => s.completed && s.weight > 0);
+            const maxW = doneSets.length ? Math.max(...doneSets.map((s) => s.weight)) : 0;
+            const avgR = doneSets.length ? Math.round(doneSets.reduce((a, s) => a + s.reps, 0) / doneSets.length) : 0;
+            return `Session ${i + 1}: max ${maxW}kg, avg ${avgR} reps (${doneSets.length} sets done)`;
+          }).join("\n");
+
+      const client = new Anthropic({ apiKey: import.meta.env.VITE_ANTHROPIC_API_KEY, dangerouslyAllowBrowser: true });
+      const msg = await client.messages.create({
+        model: "claude-haiku-4-5-20251001",
+        max_tokens: 80,
+        messages: [{
+          role: "user",
+          content: `You are a gym coach. For "${exerciseName}", suggest the weight for today's sets.
+
+Recent history (newest first):
+${historyText}
+
+Today's planned sets: ${currentSets.length} sets × ${currentSets[0]?.reps ?? "?"} reps at ${currentSets[0]?.weight ?? "?"}kg
+
+Reply in 1-2 short sentences. Give a specific weight in kg. Be direct and motivating.`,
+        }],
+      });
+      const text = msg.content[0].type === "text" ? msg.content[0].text : "";
+      setAiSuggestions((prev) => ({ ...prev, [exIdx]: text }));
+    } catch (err) {
+      console.error("AI suggest failed:", err);
+      setAiSuggestions((prev) => ({ ...prev, [exIdx]: "Could not get suggestion. Try again." }));
+    } finally {
+      setAiLoading((prev) => ({ ...prev, [exIdx]: false }));
+    }
+  }
+
   async function handleFinish() {
     setSaving(true);
     if (intervalRef.current) clearInterval(intervalRef.current);
     const savePromise = addDoc(collection(db, `users/${userId}/workouts`), {
-      programId: program.id,
-      programName: program.name,
+      programId: program!.id,
+      programName: program!.name,
       date: new Date().toISOString(),
       exercises: activeExercises.map((ex) => ({
         name: ex.name,
@@ -309,7 +367,7 @@ export default function WorkoutLogger({ userId }: WorkoutLoggerProps) {
           >
             {/* Exercise header */}
             <div className="flex items-center gap-2 mb-3">
-              <span className="text-white font-bold">{ex.name}</span>
+              <span className="text-white font-bold flex-1">{ex.name}</span>
               <span
                 className={`text-[10px] uppercase tracking-wider border rounded-full px-2 py-0.5 font-semibold ${
                   MUSCLE_GROUP_COLORS[ex.muscleGroup] ?? "bg-gray-800/50 text-gray-300 border-gray-600"
@@ -317,7 +375,24 @@ export default function WorkoutLogger({ userId }: WorkoutLoggerProps) {
               >
                 {ex.muscleGroup}
               </span>
+              <button
+                onClick={() => suggestWeight(exIdx, ex.name)}
+                disabled={aiLoading[exIdx]}
+                className="flex items-center gap-1 text-[10px] uppercase tracking-wider font-bold px-2 py-1 rounded-lg border border-pink-800 text-pink-400 hover:border-pink-500 hover:text-pink-300 transition-colors disabled:opacity-50 shrink-0"
+                style={aiLoading[exIdx] ? {} : { textShadow: "0 0 6px rgba(255,0,127,0.5)" }}
+              >
+                <Sparkles size={11} />
+                {aiLoading[exIdx] ? "..." : "AI"}
+              </button>
             </div>
+
+            {/* AI suggestion */}
+            {aiSuggestions[exIdx] && (
+              <div className="mb-3 px-3 py-2 rounded-xl bg-pink-950/30 border border-pink-900/50 text-pink-300 text-xs leading-relaxed">
+                <span className="text-pink-500 font-bold uppercase tracking-wider text-[10px]">AI Coach · </span>
+                {aiSuggestions[exIdx]}
+              </div>
+            )}
 
             {/* Column labels */}
             <div className="grid grid-cols-[28px_1fr_1fr_36px] gap-2 mb-2 px-1">

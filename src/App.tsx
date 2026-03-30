@@ -29,22 +29,29 @@ function AppRoutes({ user }: { user: any }) {
 
       {!isWorkout && (
         <nav className="fixed bottom-0 w-full max-w-md left-1/2 -translate-x-1/2 bg-[#141a29] border-t border-purple-900 px-4 py-3 flex justify-between items-center shadow-[0_-5px_20px_rgba(255,0,127,0.15)] z-50">
-          <Link to="/" className="flex flex-col items-center gap-1 text-gray-400 hover:text-[#00ffff] transition-colors">
-            <Dumbbell size={24} />
-            <span className="text-[9px] uppercase tracking-widest font-display">Workouts</span>
-          </Link>
-          <Link to="/programs" className="flex flex-col items-center gap-1 text-gray-400 hover:text-[#00ffff] transition-colors">
-            <Play size={24} />
-            <span className="text-[9px] uppercase tracking-widest font-display">Programs</span>
-          </Link>
-          <Link to="/stats" className="flex flex-col items-center gap-1 text-gray-400 hover:text-[#00ffff] transition-colors">
-            <LineChart size={24} />
-            <span className="text-[9px] uppercase tracking-widest font-display">Stats</span>
-          </Link>
-          <Link to="/profile" className="flex flex-col items-center gap-1 text-gray-400 hover:text-[#00ffff] transition-colors">
-            <User size={24} />
-            <span className="text-[9px] uppercase tracking-widest font-display">Profile</span>
-          </Link>
+          {[
+            { to: "/", icon: <Dumbbell size={22} />, label: "Workouts" },
+            { to: "/programs", icon: <Play size={22} />, label: "Programs" },
+            { to: "/stats", icon: <LineChart size={22} />, label: "Stats" },
+            { to: "/profile", icon: <User size={22} />, label: "Profile" },
+          ].map(({ to, icon, label }) => {
+            const active = location.pathname === to;
+            return (
+              <Link
+                key={to}
+                to={to}
+                className="flex flex-col items-center gap-1 transition-colors"
+                style={active ? {
+                  color: "#ff007f",
+                  textShadow: "0 0 8px rgba(255,0,127,0.8), 0 0 16px rgba(255,0,127,0.4)",
+                  filter: "drop-shadow(0 0 4px rgba(255,0,127,0.6))",
+                } : { color: "#6b7280" }}
+              >
+                {icon}
+                <span className="text-[9px] uppercase tracking-widest font-display">{label}</span>
+              </Link>
+            );
+          })}
         </nav>
       )}
     </div>

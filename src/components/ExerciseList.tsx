@@ -36,7 +36,7 @@ const defaultForm = {
 export default function ExerciseList({
   userId,
   muscleGroup,
-  muscleGroupName,
+  muscleGroupName: _muscleGroupName,
 }: ExerciseListProps) {
   const [exercises, setExercises] = useState<Exercise[]>([]);
   const [loading, setLoading] = useState(true);
