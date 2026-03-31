@@ -349,71 +349,62 @@ Only use these muscleGroups: chest, back, legs, shoulders, arms, core.`;
     if (!selectedProgram) return;
     setCoachStep("optimizing");
     try {
-      // Fetch last 6 months of workouts, sorted oldest→newest for timeline
+      // Fetch last 6 months, oldest→newest, cap at 40 docs
       const sixMonthsAgo = new Date();
       sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
       const cutoff = sixMonthsAgo.toISOString();
       const q = query(
         collection(db, "users", userId, "workouts"),
         orderBy("date", "asc"),
-        limit(60)
+        limit(40)
       );
       const snap = await getDocs(q);
       const allWorkouts = snap.docs
         .map((d) => d.data())
         .filter((w) => (w.date ?? "") >= cutoff);
 
-      // Build per-exercise timeline across ALL workouts (not just this program)
+      // Build compact per-exercise summary (max 12 sessions each)
       const exerciseNames = selectedProgram.exercises.map((e) => e.name);
       type SetEntry = { reps: number; weight: number; completed: boolean };
-      const timelines: Record<string, { date: string; sets: SetEntry[]; completionRate: number; maxWeight: number; avgReps: number }[]> = {};
+      const timelines: Record<string, string[]> = {};
 
       for (const w of allWorkouts) {
         const date = w.date?.slice(0, 10) ?? "";
         for (const ex of (w.exercises ?? []) as { name: string; sets: SetEntry[] }[]) {
           if (!exerciseNames.includes(ex.name)) continue;
           const done = ex.sets.filter((s) => s.completed && s.weight > 0);
-          const all = ex.sets.length;
-          const maxWeight = done.length ? Math.max(...done.map((s) => s.weight)) : 0;
-          const avgReps = done.length ? Math.round(done.reduce((a, s) => a + s.reps, 0) / done.length) : 0;
-          const completionRate = all > 0 ? Math.round((done.length / all) * 100) : 0;
+          if (!done.length) continue;
+          const maxW = Math.max(...done.map((s) => s.weight));
+          const avgR = Math.round(done.reduce((a, s) => a + s.reps, 0) / done.length);
+          const pct = Math.round((done.length / ex.sets.length) * 100);
           if (!timelines[ex.name]) timelines[ex.name] = [];
-          timelines[ex.name].push({ date, sets: ex.sets, completionRate, maxWeight, avgReps });
+          timelines[ex.name].push(`${date}: ${maxW}kg, ${avgR}reps, ${pct}%done`);
         }
       }
 
-      // Format timeline text per exercise
+      // Keep only last 12 sessions per exercise
       const timelineText = exerciseNames.map((name) => {
-        const tl = timelines[name] ?? [];
-        if (tl.length === 0) return `${name}: no history`;
-        const rows = tl.map((t) =>
-          `  ${t.date}: ${t.maxWeight}kg max, ${t.avgReps} avg reps, ${t.completionRate}% sets completed`
-        ).join("\n");
-        return `${name} (${tl.length} sessions):\n${rows}`;
-      }).join("\n\n");
+        const tl = (timelines[name] ?? []).slice(-12);
+        if (!tl.length) return `${name}: no data`;
+        return `${name}: ${tl.join(" | ")}`;
+      }).join("\n");
 
       const client = new Anthropic({ apiKey: import.meta.env.VITE_ANTHROPIC_API_KEY, dangerouslyAllowBrowser: true });
-      const prompt = `You are an expert strength and hypertrophy coach. Analyze this athlete's full performance timeline and optimize their program intelligently.
+      const prompt = `Fitness coach. Optimize program based on 6-month history.
 
-Program: ${selectedProgram.name}
-Current program targets:
-${selectedProgram.exercises.map((e) => `  ${e.name}: ${e.sets}×${e.reps} @ ${e.weight}kg`).join("\n")}
+Current: ${selectedProgram.exercises.map((e) => `${e.name} ${e.sets}×${e.reps}@${e.weight}kg`).join(", ")}
 
-Full performance timeline per exercise (oldest → newest):
+History per exercise (oldest→newest, format: date: maxKg, avgReps, %setsCompleted):
 ${timelineText}
 
-Analyze each exercise independently:
-- Look at the trend: is weight/reps increasing, plateauing, or declining?
-- Consider completion rate: consistently 100% = ready for more; <70% = too heavy
-- A plateau over 3+ sessions may need a rep scheme change, not just weight
-- Progressive overload: recommend increases only when the trend and completion support it
-- If the athlete is clearly progressing well, reflect that with a modest increase
-- If stagnant or struggling, consider same weight with more reps, or a slight deload
-- Do NOT automatically increase weight — base every decision on the data
+Decision rules:
+- Trend up + high completion → modest weight increase (2.5–5kg)
+- Plateau 3+ sessions → try rep increase before weight
+- Completion <70% → hold or reduce weight
+- Declining → deload (drop 10%)
+- No data → keep current
 
-For each exercise provide your recommendation as JSON. Keep muscleGroup unchanged.
-
-Respond ONLY with a valid JSON array, no markdown:
+Return ONLY a JSON array, no markdown:
 [{"name":"...","sets":3,"reps":8,"weight":80,"muscleGroup":"chest"}]`;
 
       const message = await client.messages.create({
