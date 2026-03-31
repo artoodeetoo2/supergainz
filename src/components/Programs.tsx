@@ -610,9 +610,9 @@ Respond ONLY with a valid JSON array, no markdown, no explanation:
                 className="bg-[#141a29] border border-purple-900 rounded-2xl px-4 py-3 flex items-center justify-between gap-3"
               >
                 <div className="flex-1 min-w-0">
-                  <p className="text-white font-semibold truncate">{ex.name}</p>
-                  <p className="text-gray-400 text-xs mt-0.5">
-                    {ex.sets} sets &times; {ex.reps} reps &bull; {ex.weight} kg
+                  <p className="font-bold truncate neon-text-cyan" style={{ fontSize: "13px" }}>{ex.name}</p>
+                  <p className="text-gray-500 text-xs mt-0.5 font-display tracking-widest">
+                    {ex.sets}×{ex.reps} @ {ex.weight}kg
                   </p>
                 </div>
                 <button
@@ -764,15 +764,16 @@ Respond ONLY with a valid JSON array, no markdown, no explanation:
       <h2 className="text-3xl font-black neon-text-cyan mb-1 uppercase tracking-widest font-display neon-flicker">
         Programs
       </h2>
-      <p className="text-gray-400 text-sm mb-5">Your workout programs.</p>
+      <p className="text-gray-500 text-xs mb-5 uppercase tracking-widest font-display">Your workout programs</p>
 
       {/* Action buttons */}
       <div className="flex gap-3 mb-6">
         <button
           onClick={handleLoadDefaults}
-          className="flex-1 border border-purple-700 text-purple-400 py-2.5 rounded-xl text-sm font-semibold hover:border-purple-500 hover:text-purple-300 transition-colors"
+          className="flex-1 border border-cyan-800 text-cyan-400 py-2.5 rounded-xl text-sm font-bold uppercase tracking-wider hover:border-cyan-500 hover:text-cyan-300 transition-colors font-display"
+          style={{ textShadow: "0 0 8px rgba(0,255,255,0.4)" }}
         >
-          Load Defaults
+          Defaults
         </button>
         <button
           onClick={handleAiSuggest}
@@ -795,7 +796,7 @@ Respond ONLY with a valid JSON array, no markdown, no explanation:
               key={s.name}
               className="bg-[#141a29] border border-pink-800 rounded-2xl p-4"
             >
-              <p className="text-white font-bold mb-1">{s.name}</p>
+              <p className="font-black uppercase tracking-wider font-display neon-text-pink mb-1" style={{ fontSize: "13px" }}>{s.name}</p>
               <div className="mb-3">
                 <MuscleIconStack groups={s.muscleGroups} />
               </div>
@@ -838,7 +839,7 @@ Respond ONLY with a valid JSON array, no markdown, no explanation:
             >
               <div className="flex items-start justify-between gap-3">
                 <div className="flex-1 min-w-0">
-                  <p className="text-white font-bold text-lg leading-tight mb-2">
+                  <p className="font-black uppercase tracking-wider font-display neon-text-cyan leading-tight mb-2" style={{ fontSize: "14px" }}>
                     {program.name}
                   </p>
                   <div className="mb-3">
