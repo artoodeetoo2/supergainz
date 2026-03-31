@@ -262,40 +262,67 @@ export default function Programs({ userId }: ProgramsProps) {
 
   // ── AI Suggest ──────────────────────────────────────────────────────────────
 
-  const handleAiSuggest = async () => {
+  const handleAiPlan = async () => {
     setAiLoading(true);
     try {
-      const client = new Anthropic({
-        apiKey: import.meta.env.VITE_ANTHROPIC_API_KEY,
-        dangerouslyAllowBrowser: true,
-      });
+      // Fetch recent workout history for context
+      const q = query(
+        collection(db, "users", userId, "workouts"),
+        orderBy("date", "desc"),
+        limit(20)
+      );
+      const snap = await getDocs(q);
+      const recentWorkouts = snap.docs.map((d) => d.data());
 
-      const existingNames = programs.map((p) => p.name).join(", ");
-      const prompt = `You are a fitness coach. The user already has these workout programs: ${existingNames || "none"}.
-Suggest 2 new complementary workout programs. Respond ONLY with valid JSON array, no markdown, no explanation:
-[
-  {
-    "name": "Program Name",
-    "muscleGroups": ["chest", "back"],
-    "exercises": [
-      {"name": "Exercise Name", "sets": 3, "reps": 10, "weight": 60, "muscleGroup": "chest"}
-    ]
-  }
-]
-Only use these muscleGroups: chest, back, legs, shoulders, arms, core.`;
+      // Summarize trained muscle groups and frequency from last 8 weeks
+      const eightWeeksAgo = new Date();
+      eightWeeksAgo.setDate(eightWeeksAgo.getDate() - 56);
+      const cutoff = eightWeeksAgo.toISOString();
+      const recent = recentWorkouts.filter((w) => (w.date ?? "") >= cutoff);
+
+      const muscleCounts: Record<string, number> = {};
+      for (const w of recent) {
+        const groups = new Set<string>();
+        for (const ex of (w.exercises ?? []) as { muscleGroup: string }[]) {
+          if (ex.muscleGroup) groups.add(ex.muscleGroup);
+        }
+        groups.forEach((g) => { muscleCounts[g] = (muscleCounts[g] ?? 0) + 1; });
+      }
+      const frequencyText = Object.entries(muscleCounts).length
+        ? Object.entries(muscleCounts)
+            .sort((a, b) => b[1] - a[1])
+            .map(([g, n]) => `${g}: ${n}x`)
+            .join(", ")
+        : "no history yet";
+
+      const existingNames = programs.map((p) => p.name).join(", ") || "none";
+
+      const client = new Anthropic({ apiKey: import.meta.env.VITE_ANTHROPIC_API_KEY, dangerouslyAllowBrowser: true });
+      const prompt = `You are a fitness coach creating new workout programs for an athlete.
+
+Existing programs (do not duplicate): ${existingNames}
+Muscle group training frequency last 8 weeks: ${frequencyText}
+Total sessions last 8 weeks: ${recent.length}
+
+Based on the training history, suggest 2 new programs that complement what they already do. If certain muscle groups are undertrained or missing, prioritize those. If no history, suggest well-rounded beginner programs.
+
+Use realistic weights (kg) based on typical intermediate lifter.
+Only use muscleGroups from: chest, back, legs, shoulders, arms, core.
+
+Return ONLY a JSON array, no markdown:
+[{"name":"...","muscleGroups":["..."],"exercises":[{"name":"...","sets":3,"reps":10,"weight":60,"muscleGroup":"chest"}]}]`;
 
       const message = await client.messages.create({
         model: "claude-haiku-4-5-20251001",
-        max_tokens: 1024,
+        max_tokens: 1200,
         messages: [{ role: "user", content: prompt }],
       });
 
-      const responseText =
-        message.content[0].type === "text" ? message.content[0].text : "";
-      const parsed = JSON.parse(responseText);
-      setSuggestions(parsed);
+      const raw = message.content[0].type === "text" ? message.content[0].text : "[]";
+      const cleaned = raw.replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/i, "").trim();
+      setSuggestions(JSON.parse(cleaned));
     } catch (err) {
-      console.error("AI suggest failed:", err);
+      console.error("AI Plan failed:", err);
     } finally {
       setAiLoading(false);
     }
@@ -878,12 +905,12 @@ Respond ONLY with a valid JSON array, no markdown, no explanation:
           Defaults
         </button>
         <button
-          onClick={handleAiSuggest}
+          onClick={handleAiPlan}
           disabled={aiLoading}
           className="flex-1 bg-gradient-to-r from-pink-500 to-purple-600 py-2.5 rounded-xl text-sm font-bold text-white shadow-[0_0_12px_#ff007f] hover:scale-[1.02] transition-transform disabled:opacity-70 disabled:cursor-not-allowed flex items-center justify-center gap-2"
         >
           <Sparkles size={16} />
-          {aiLoading ? "Analyzing..." : "AI Suggest"}
+          {aiLoading ? "Planning..." : "AI Plan"}
         </button>
       </div>
 
@@ -891,7 +918,7 @@ Respond ONLY with a valid JSON array, no markdown, no explanation:
       {suggestions.length > 0 && (
         <div className="mb-6 space-y-3">
           <h3 className="text-pink-400 font-bold uppercase text-xs tracking-widest mb-2">
-            AI Suggestions
+            AI Plan Suggestions
           </h3>
           {suggestions.map((s) => (
             <div
