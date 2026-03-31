@@ -151,7 +151,7 @@ export default function WorkoutLogger({ userId }: WorkoutLoggerProps) {
   const [quote] = useState(randomQuote);
   const [gif] = useState(randomGif);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const [aiSuggestions, setAiSuggestions] = useState<Record<number, string>>({});
+  const [aiSuggestions, setAiSuggestions] = useState<Record<number, { message: string; weight: number | null }>>({});
   const [aiLoading, setAiLoading] = useState<Record<number, boolean>>({});
 
   // Redirect if no program
@@ -234,9 +234,19 @@ export default function WorkoutLogger({ userId }: WorkoutLoggerProps) {
     );
   }
 
+  function applyWeight(exIdx: number, weight: number) {
+    setActiveExercises((prev) =>
+      prev.map((ex, ei) => {
+        if (ei !== exIdx) return ex;
+        return { ...ex, sets: ex.sets.map((s) => ({ ...s, weight })) };
+      })
+    );
+    setAiSuggestions((prev) => ({ ...prev, [exIdx]: { ...prev[exIdx], weight: null } }));
+  }
+
   async function suggestWeight(exIdx: number, exerciseName: string) {
     setAiLoading((prev) => ({ ...prev, [exIdx]: true }));
-    setAiSuggestions((prev) => ({ ...prev, [exIdx]: "" }));
+    setAiSuggestions((prev) => ({ ...prev, [exIdx]: { message: "", weight: null } }));
     try {
       const q = query(
         collection(db, `users/${userId}/workouts`),
@@ -266,7 +276,7 @@ export default function WorkoutLogger({ userId }: WorkoutLoggerProps) {
       const client = new Anthropic({ apiKey: import.meta.env.VITE_ANTHROPIC_API_KEY, dangerouslyAllowBrowser: true });
       const msg = await client.messages.create({
         model: "claude-haiku-4-5-20251001",
-        max_tokens: 80,
+        max_tokens: 120,
         messages: [{
           role: "user",
           content: `You are a gym coach. For "${exerciseName}", suggest the weight for today's sets.
@@ -276,14 +286,27 @@ ${historyText}
 
 Today's planned sets: ${currentSets.length} sets × ${currentSets[0]?.reps ?? "?"} reps at ${currentSets[0]?.weight ?? "?"}kg
 
-Reply in 1-2 short sentences. Give a specific weight in kg. Be direct and motivating.`,
+Respond ONLY with valid JSON in this exact format:
+{"weight": <number in kg, use 0.5 increments>, "message": "<one motivating sentence>"}`,
         }],
       });
-      const text = msg.content[0].type === "text" ? msg.content[0].text : "";
-      setAiSuggestions((prev) => ({ ...prev, [exIdx]: text }));
+      const raw = msg.content[0].type === "text" ? msg.content[0].text.trim() : "";
+      let weight: number | null = null;
+      let message = "";
+      try {
+        const parsed = JSON.parse(raw);
+        weight = typeof parsed.weight === "number" ? parsed.weight : null;
+        message = parsed.message ?? "";
+      } catch {
+        // fallback: try to extract number from text
+        const match = raw.match(/(\d+(?:\.\d+)?)\s*kg/i);
+        weight = match ? parseFloat(match[1]) : null;
+        message = raw;
+      }
+      setAiSuggestions((prev) => ({ ...prev, [exIdx]: { weight, message } }));
     } catch (err) {
       console.error("AI suggest failed:", err);
-      setAiSuggestions((prev) => ({ ...prev, [exIdx]: "Could not get suggestion. Try again." }));
+      setAiSuggestions((prev) => ({ ...prev, [exIdx]: { weight: null, message: "Could not get suggestion. Try again." } }));
     } finally {
       setAiLoading((prev) => ({ ...prev, [exIdx]: false }));
     }
@@ -408,7 +431,16 @@ Reply in 1-2 short sentences. Give a specific weight in kg. Be direct and motiva
             {aiSuggestions[exIdx] && (
               <div className="mb-3 px-3 py-2 rounded-xl bg-pink-950/30 border border-pink-900/50 text-pink-300 text-xs leading-relaxed">
                 <span className="text-pink-500 font-bold uppercase tracking-wider text-[10px]">AI Coach · </span>
-                {aiSuggestions[exIdx]}
+                {aiSuggestions[exIdx].message}
+                {aiSuggestions[exIdx].weight !== null && (
+                  <button
+                    onClick={() => applyWeight(exIdx, aiSuggestions[exIdx].weight!)}
+                    className="mt-2 flex items-center gap-1 w-full justify-center bg-pink-600/30 hover:bg-pink-600/50 border border-pink-600 text-pink-200 font-bold uppercase tracking-wider text-[10px] py-1.5 rounded-lg transition-colors"
+                  >
+                    <Sparkles size={10} />
+                    Apply {aiSuggestions[exIdx].weight} kg to all sets
+                  </button>
+                )}
               </div>
             )}
 
