@@ -10,6 +10,9 @@ import {
   deleteDoc,
   doc,
   updateDoc,
+  query,
+  orderBy,
+  limit,
 } from "firebase/firestore";
 import Anthropic from "@anthropic-ai/sdk";
 
@@ -35,7 +38,7 @@ interface ProgramsProps {
   userId: string;
 }
 
-type CoachStep = "goal" | "experience" | "strength" | "generating" | "results";
+type CoachStep = "goal" | "experience" | "strength" | "generating" | "optimizing" | "results";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -168,6 +171,7 @@ export default function Programs({ userId }: ProgramsProps) {
   const [coachExperience, setCoachExperience] = useState("");
   const [_coachStrength, setCoachStrength] = useState("");
   const [coachResults, setCoachResults] = useState<ProgramExercise[]>([]);
+  const [hasHistory, setHasHistory] = useState(false);
 
   // Add exercise form (detail view)
   const [showAddExercise, setShowAddExercise] = useState(false);
@@ -327,6 +331,84 @@ Only use these muscleGroups: chest, back, legs, shoulders, arms, core.`;
     setCoachResults([]);
   };
 
+  useEffect(() => {
+    if (!selectedProgram) { setHasHistory(false); return; }
+    (async () => {
+      const q = query(
+        collection(db, "users", userId, "workouts"),
+        orderBy("date", "desc"),
+        limit(1)
+      );
+      const snap = await getDocs(q);
+      const found = snap.docs.some((d) => d.data().programId === selectedProgram.id);
+      setHasHistory(found);
+    })();
+  }, [selectedProgram, userId]);
+
+  const runOptimize = async () => {
+    if (!selectedProgram) return;
+    setCoachStep("optimizing");
+    try {
+      const q = query(
+        collection(db, "users", userId, "workouts"),
+        orderBy("date", "desc"),
+        limit(5)
+      );
+      const snap = await getDocs(q);
+      const relevantWorkouts = snap.docs
+        .map((d) => d.data())
+        .filter((w) => w.programId === selectedProgram.id)
+        .slice(0, 4);
+
+      const historyText = relevantWorkouts.length === 0
+        ? "No history yet."
+        : relevantWorkouts.map((w, i) => {
+            const exLines = (w.exercises as { name: string; sets: { reps: number; weight: number; completed: boolean }[] }[])
+              .map((ex) => {
+                const done = ex.sets.filter((s) => s.completed && s.weight > 0);
+                const maxW = done.length ? Math.max(...done.map((s) => s.weight)) : 0;
+                const avgR = done.length ? Math.round(done.reduce((a, s) => a + s.reps, 0) / done.length) : 0;
+                return `  ${ex.name}: max ${maxW}kg, avg ${avgR} reps, ${done.length}/${ex.sets.length} sets completed`;
+              }).join("\n");
+            return `Session ${i + 1} (${w.date?.slice(0, 10)}):\n${exLines}`;
+          }).join("\n\n");
+
+      const client = new Anthropic({ apiKey: import.meta.env.VITE_ANTHROPIC_API_KEY, dangerouslyAllowBrowser: true });
+      const prompt = `You are an expert fitness coach. Optimize this workout program based on the athlete's actual performance history.
+
+Program: ${selectedProgram.name}
+Current exercises:
+${JSON.stringify(selectedProgram.exercises, null, 2)}
+
+Recent workout history (newest first):
+${historyText}
+
+Rules:
+- If an exercise was consistently completed at the programmed weight, increase weight by 2.5–5kg
+- If sets were frequently missed or weight was reduced, keep or slightly lower
+- Adjust reps/sets if the athlete is clearly over- or under-challenged
+- Keep muscleGroup unchanged
+
+Respond ONLY with a valid JSON array, no markdown:
+[{"name":"...","sets":3,"reps":8,"weight":80,"muscleGroup":"chest"}]`;
+
+      const message = await client.messages.create({
+        model: "claude-haiku-4-5-20251001",
+        max_tokens: 1024,
+        messages: [{ role: "user", content: prompt }],
+      });
+
+      const raw = message.content[0].type === "text" ? message.content[0].text : "[]";
+      const cleaned = raw.replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/i, "").trim();
+      const parsed: ProgramExercise[] = JSON.parse(cleaned);
+      setCoachResults(parsed);
+      setCoachStep("results");
+    } catch (err) {
+      console.error("Optimize failed:", err);
+      resetCoach();
+    }
+  };
+
   const runCoach = async (goal: string, experience: string, strength: string) => {
     if (!selectedProgram) return;
     setCoachStep("generating");
@@ -362,8 +444,9 @@ Respond ONLY with a valid JSON array, no markdown, no explanation:
         messages: [{ role: "user", content: prompt }],
       });
 
-      const text = message.content[0].type === "text" ? message.content[0].text : "[]";
-      const parsed: ProgramExercise[] = JSON.parse(text);
+      const raw = message.content[0].type === "text" ? message.content[0].text : "[]";
+      const cleaned = raw.replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/i, "").trim();
+      const parsed: ProgramExercise[] = JSON.parse(cleaned);
       setCoachResults(parsed);
       setCoachStep("results");
     } catch (err) {
@@ -513,11 +596,15 @@ Respond ONLY with a valid JSON array, no markdown, no explanation:
           </>
         )}
 
-        {coachStep === "generating" && (
+        {(coachStep === "generating" || coachStep === "optimizing") && (
           <div className="flex flex-col items-center justify-center py-20 gap-4">
             <Sparkles size={36} className="text-pink-500 animate-pulse" />
-            <p className="text-white font-bold text-lg">Analyzing your profile...</p>
-            <p className="text-gray-400 text-sm">Claude is crafting your personalized program</p>
+            <p className="text-white font-bold text-lg">
+              {coachStep === "optimizing" ? "Analyzing your performance..." : "Analyzing your profile..."}
+            </p>
+            <p className="text-gray-400 text-sm">
+              {coachStep === "optimizing" ? "Claude is reviewing your workout history" : "Claude is crafting your personalized program"}
+            </p>
           </div>
         )}
 
@@ -590,11 +677,11 @@ Respond ONLY with a valid JSON array, no markdown, no explanation:
 
         {/* AI Coach button */}
         <button
-          onClick={() => setCoachStep("goal")}
+          onClick={() => hasHistory ? runOptimize() : setCoachStep("goal")}
           className="w-full flex items-center justify-center gap-2 border border-pink-800 text-pink-400 hover:bg-pink-900/20 hover:border-pink-500 py-2.5 rounded-xl text-sm font-bold uppercase tracking-widest transition-colors mb-6"
         >
           <Bot size={16} />
-          Personalize with AI
+          {hasHistory ? "Optimize with AI Coach" : "Personalize with AI"}
         </button>
 
         {/* Exercise list */}

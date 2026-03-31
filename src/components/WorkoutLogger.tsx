@@ -291,17 +291,17 @@ Respond ONLY with valid JSON in this exact format:
         }],
       });
       const raw = msg.content[0].type === "text" ? msg.content[0].text.trim() : "";
+      const cleaned = raw.replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/i, "").trim();
       let weight: number | null = null;
       let message = "";
       try {
-        const parsed = JSON.parse(raw);
+        const parsed = JSON.parse(cleaned);
         weight = typeof parsed.weight === "number" ? parsed.weight : null;
         message = parsed.message ?? "";
       } catch {
-        // fallback: try to extract number from text
-        const match = raw.match(/(\d+(?:\.\d+)?)\s*kg/i);
+        const match = cleaned.match(/(\d+(?:\.\d+)?)\s*kg/i);
         weight = match ? parseFloat(match[1]) : null;
-        message = raw;
+        message = cleaned;
       }
       setAiSuggestions((prev) => ({ ...prev, [exIdx]: { weight, message } }));
     } catch (err) {
