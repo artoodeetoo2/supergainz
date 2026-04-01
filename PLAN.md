@@ -94,8 +94,28 @@ src/
     Stats.tsx              ✅ Recharts-graafi, PR badge, flame effect
 ```
 
-## 5. Seuraavat Askeleet
+## 5. Toteutettu v0.2.0+
 
-1. **AI paino-suositukset** WorkoutLoggeriin (per liike, historia-pohjainen, Claude)
-2. **Firebase Hosting** — deploy tuotantoon (`firebase deploy`)
-3. **Security Rules** — tuotantotason Firestore-säännöt ennen julkaisua
+- ✅ AI paino-suositukset WorkoutLoggerissa (Claude, JSON, Apply-nappi)
+- ✅ Firebase Hosting — https://supergainz.web.app
+- ✅ Workout streak — liekki-ikoni + päivälaskuri Homessa
+- ✅ Rest timer — per-liike, tap-to-cycle (30/60/90/120/180s), countdown-palkki
+- ✅ Zyzz voice-lines — neon-toast setti kuitatessa
+- ✅ Remove set — roskakori-ikoni per setti
+
+## 6. Backlog
+
+### Pian toteutettavat
+- 🔲 **Body weight tracking** — päivittäinen painonseuranta Statsissa omana grafana-välilehtenä
+  - ⚠️ HUOM: painotieto on sensitiivistä — ennen julkaisua mietittävä datan enkryptaus, käyttöehdot ja GDPR. MVP:ssä tallennetaan vain omalle Firestore-tilille.
+- 🔲 **1RM calculator** — syötä paino + toistot → arvioitu maksimi (Epley-kaava), näkyy Statsissa
+- 🔲 **JSON/PDF export** — "Take my data" -nappi Profiilissa, lataa kaikki workoutit
+
+### Enemmän työtä
+- 🔲 **Weekly summary** — maanantai-yhteenveto: treenit, paras lifti, streak, motivaatiokuva
+- 🔲 **Push notifications** — muistutus jos ei treeniä X päivään
+  - ⚠️ Vaatii Firebase Blaze -plan (pay-as-you-go) Cloud Functionsia varten. FCM itse ilmainen.
+- 🔲 **Offline support** — Firestore offline-cache, treeni tallentuu vaikka netti katkeaa
+
+### Security
+- 🔲 **Firestore Security Rules** — tuotantotason säännöt ennen laajempaa julkaisua

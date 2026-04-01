@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
-import { ChevronLeft, Check, Plus, Sparkles } from "lucide-react";
+import { ChevronLeft, Check, Plus, Sparkles, Timer, Trash2, X } from "lucide-react";
 import { collection, addDoc, getDocs, orderBy, query, limit } from "firebase/firestore";
 import { db } from "../firebase";
 import Anthropic from "@anthropic-ai/sdk";
@@ -43,8 +43,21 @@ const ZYZZ_GIFS = [
   "/gifs/zyzz-mirin.webp",
 ];
 
+const VOICE_LINES = [
+  "u mirin brah?", "aesthetics.", "ngmi if you stop now.", "we're all gonna make it.",
+  "do it for him.", "feel the pump.", "stay aesthetic.", "sickcunt.",
+  "that's how it's done.", "just like that brah.", "WGMI.", "no days off.",
+  "built different.", "u jelly brah?", "mirin hard rn.", "one more brah.", "legend.",
+];
+
+const REST_OPTIONS = [30, 60, 90, 120, 180];
+
 function randomGif() {
   return ZYZZ_GIFS[Math.floor(Math.random() * ZYZZ_GIFS.length)];
+}
+
+function randomVoiceLine() {
+  return VOICE_LINES[Math.floor(Math.random() * VOICE_LINES.length)];
 }
 
 const ZYZZ_QUOTES = [
@@ -153,6 +166,14 @@ export default function WorkoutLogger({ userId }: WorkoutLoggerProps) {
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [aiSuggestions, setAiSuggestions] = useState<Record<number, { message: string; weight: number | null }>>({});
   const [aiLoading, setAiLoading] = useState<Record<number, boolean>>({});
+  // Rest timer
+  const [restDuration, setRestDuration] = useState<Record<number, number>>({});
+  const [restRemaining, setRestRemaining] = useState<number | null>(null);
+  const [restExName, setRestExName] = useState("");
+  const restRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // Voice line toast
+  const [voiceLine, setVoiceLine] = useState<string | null>(null);
+  const voiceTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Redirect if no program
   useEffect(() => {
@@ -186,36 +207,76 @@ export default function WorkoutLogger({ userId }: WorkoutLoggerProps) {
     };
   }, []);
 
+  // Rest countdown tick
+  useEffect(() => {
+    if (restRemaining === null || restRemaining <= 0) {
+      if (restRef.current) clearInterval(restRef.current);
+      if (restRemaining !== null && restRemaining <= 0) setRestRemaining(null);
+      return;
+    }
+    restRef.current = setInterval(() => {
+      setRestRemaining((r) => {
+        if (r === null || r <= 1) { clearInterval(restRef.current!); return null; }
+        return r - 1;
+      });
+    }, 1000);
+    return () => { if (restRef.current) clearInterval(restRef.current); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [restRemaining !== null]);
+
   if (!program) return null;
 
+  function getRestDuration(exIdx: number) { return restDuration[exIdx] ?? 90; }
+
+  function cycleRestDuration(exIdx: number) {
+    const idx = REST_OPTIONS.indexOf(getRestDuration(exIdx));
+    setRestDuration((prev) => ({ ...prev, [exIdx]: REST_OPTIONS[(idx + 1) % REST_OPTIONS.length] }));
+  }
+
+  function startRest(exIdx: number) {
+    if (restRef.current) clearInterval(restRef.current);
+    setRestExName(activeExercises[exIdx]?.name ?? "");
+    setRestRemaining(getRestDuration(exIdx));
+  }
+
+  function skipRest() {
+    if (restRef.current) clearInterval(restRef.current);
+    setRestRemaining(null);
+  }
+
+  function showVoiceLine() {
+    if (voiceTimeoutRef.current) clearTimeout(voiceTimeoutRef.current);
+    setVoiceLine(randomVoiceLine());
+    voiceTimeoutRef.current = setTimeout(() => setVoiceLine(null), 1800);
+  }
+
   function handleBack() {
-    const anyCompleted = activeExercises.some((ex) =>
-      ex.sets.some((s) => s.completed)
-    );
+    const anyCompleted = activeExercises.some((ex) => ex.sets.some((s) => s.completed));
     if (anyCompleted) {
-      if (!window.confirm("End workout? Progress will be lost.")) return;
+      if (!window.confirm("Abandon workout? Progress will be lost.")) return;
     }
     navigate(-1);
   }
 
-  function updateSet(
-    exIdx: number,
-    setIdx: number,
-    field: keyof ActiveSet,
-    value: number | boolean
-  ) {
-    setActiveExercises((prev) => {
-      const next = prev.map((ex, ei) => {
+  function updateSet(exIdx: number, setIdx: number, field: keyof ActiveSet, value: number | boolean) {
+    setActiveExercises((prev) =>
+      prev.map((ex, ei) => {
         if (ei !== exIdx) return ex;
-        return {
-          ...ex,
-          sets: ex.sets.map((s, si) =>
-            si === setIdx ? { ...s, [field]: value } : s
-          ),
-        };
-      });
-      return next;
-    });
+        return { ...ex, sets: ex.sets.map((s, si) => si === setIdx ? { ...s, [field]: value } : s) };
+      })
+    );
+    if (field === "completed" && value === true) {
+      setTimeout(() => { showVoiceLine(); startRest(exIdx); }, 0);
+    }
+  }
+
+  function removeSet(exIdx: number, setIdx: number) {
+    setActiveExercises((prev) =>
+      prev.map((ex, ei) => {
+        if (ei !== exIdx || ex.sets.length <= 1) return ex;
+        return { ...ex, sets: ex.sets.filter((_, si) => si !== setIdx) };
+      })
+    );
   }
 
   function addSet(exIdx: number) {
@@ -315,6 +376,7 @@ Respond ONLY with valid JSON in this exact format:
   async function handleFinish() {
     setSaving(true);
     if (intervalRef.current) clearInterval(intervalRef.current);
+    skipRest();
     const savePromise = addDoc(collection(db, `users/${userId}/workouts`), {
       programId: program!.id,
       programName: program!.name,
@@ -387,6 +449,15 @@ Respond ONLY with valid JSON in this exact format:
 
   return (
     <div className="flex flex-col min-h-screen bg-[#0b0f19]">
+
+      {/* Voice line toast */}
+      {voiceLine && (
+        <div className="fixed top-16 left-1/2 -translate-x-1/2 z-50 px-5 py-2 rounded-full bg-[#1a0a2e] border border-pink-700 neon-text-pink text-sm font-bold font-display tracking-widest uppercase pointer-events-none"
+          style={{ textShadow: "0 0 10px rgba(255,0,127,0.8)", boxShadow: "0 0 16px rgba(255,0,127,0.3)" }}>
+          {voiceLine}
+        </div>
+      )}
+
       {/* Sticky header */}
       <div className="sticky top-0 z-40 bg-[#0b0f19]/95 backdrop-blur border-b border-purple-900/50 px-4 py-3 flex items-center gap-3">
         <button
@@ -400,7 +471,7 @@ Respond ONLY with valid JSON in this exact format:
       </div>
 
       {/* Scrollable exercise list */}
-      <div className="flex-1 overflow-y-auto px-4 py-4 pb-28">
+      <div className="flex-1 overflow-y-auto px-4 py-4 pb-36">
         {activeExercises.map((ex, exIdx) => (
           <div
             key={exIdx}
@@ -416,6 +487,16 @@ Respond ONLY with valid JSON in this exact format:
               >
                 {ex.muscleGroup}
               </span>
+              {/* Rest duration */}
+              <button
+                onClick={() => cycleRestDuration(exIdx)}
+                title="Tap to change rest duration"
+                className="flex items-center gap-1 text-[10px] font-bold px-2 py-1 rounded-lg border border-cyan-900 text-cyan-500 hover:border-cyan-600 hover:text-cyan-300 transition-colors shrink-0"
+              >
+                <Timer size={11} />
+                {getRestDuration(exIdx)}s
+              </button>
+              {/* AI suggest */}
               <button
                 onClick={() => suggestWeight(exIdx, ex.name)}
                 disabled={aiLoading[exIdx]}
@@ -445,18 +526,19 @@ Respond ONLY with valid JSON in this exact format:
             )}
 
             {/* Column labels */}
-            <div className="grid grid-cols-[28px_1fr_1fr_36px] gap-2 mb-2 px-1">
+            <div className="grid grid-cols-[28px_1fr_1fr_36px_28px] gap-2 mb-2 px-1">
               <span className="text-gray-500 text-[10px] uppercase tracking-wider text-center">SET</span>
               <span className="text-gray-500 text-[10px] uppercase tracking-wider text-center">REPS</span>
               <span className="text-gray-500 text-[10px] uppercase tracking-wider text-center">KG</span>
               <span className="text-gray-500 text-[10px] uppercase tracking-wider text-center">✓</span>
+              <span />
             </div>
 
             {/* Set rows */}
             {ex.sets.map((set, setIdx) => (
               <div
                 key={setIdx}
-                className={`grid grid-cols-[28px_1fr_1fr_36px] gap-2 items-center mb-2 rounded-xl px-1 py-1 transition-colors ${
+                className={`grid grid-cols-[28px_1fr_1fr_36px_28px] gap-2 items-center mb-2 rounded-xl px-1 py-1 transition-colors ${
                   set.completed ? "bg-green-900/10" : ""
                 }`}
               >
@@ -499,6 +581,14 @@ Respond ONLY with valid JSON in this exact format:
                 >
                   <Check size={16} strokeWidth={3} />
                 </button>
+                {/* Remove set */}
+                <button
+                  onClick={() => removeSet(exIdx, setIdx)}
+                  disabled={ex.sets.length <= 1}
+                  className="w-7 h-7 flex items-center justify-center text-gray-700 hover:text-red-500 transition-colors disabled:opacity-20"
+                >
+                  <Trash2 size={13} />
+                </button>
               </div>
             ))}
 
@@ -514,15 +604,38 @@ Respond ONLY with valid JSON in this exact format:
         ))}
       </div>
 
-      {/* Fixed finish button */}
-      <div className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-md px-4 py-4 bg-[#0b0f19]/95 backdrop-blur border-t border-purple-900/30">
-        <button
-          onClick={handleFinish}
-          disabled={saving}
-          className="w-full bg-gradient-to-r from-pink-500 to-purple-600 text-white font-bold py-4 rounded-xl shadow-[0_0_20px_rgba(255,0,127,0.4)] hover:scale-[1.02] transition-transform disabled:opacity-60 disabled:scale-100 uppercase tracking-wider"
-        >
-          {saving ? "Saving..." : "Finish Workout"}
-        </button>
+      {/* Fixed bottom area */}
+      <div className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-md bg-[#0b0f19]/95 backdrop-blur border-t border-purple-900/30">
+        {/* Rest timer bar */}
+        {restRemaining !== null && (
+          <div className="px-4 pt-3 pb-1 flex items-center gap-3">
+            <Timer size={16} className="text-cyan-400 shrink-0" />
+            <div className="flex-1">
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-cyan-300 text-xs font-bold uppercase tracking-wider font-display">Rest · {restExName}</span>
+                <span className="text-cyan-400 font-black font-display text-lg tracking-widest">{formatTime(restRemaining)}</span>
+              </div>
+              <div className="w-full h-1 bg-cyan-900/30 rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-cyan-400 rounded-full transition-all duration-1000"
+                  style={{ width: `${(restRemaining / (restDuration[activeExercises.findIndex((e) => e.name === restExName)] ?? 90)) * 100}%` }}
+                />
+              </div>
+            </div>
+            <button onClick={skipRest} className="text-gray-500 hover:text-white transition-colors shrink-0">
+              <X size={18} />
+            </button>
+          </div>
+        )}
+        <div className="px-4 py-4">
+          <button
+            onClick={handleFinish}
+            disabled={saving}
+            className="w-full bg-gradient-to-r from-pink-500 to-purple-600 text-white font-bold py-4 rounded-xl shadow-[0_0_20px_rgba(255,0,127,0.4)] hover:scale-[1.02] transition-transform disabled:opacity-60 disabled:scale-100 uppercase tracking-wider"
+          >
+            {saving ? "Saving..." : "Finish Workout"}
+          </button>
+        </div>
       </div>
     </div>
   );

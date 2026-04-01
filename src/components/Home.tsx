@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { collection, getDocs, query, orderBy, limit } from "firebase/firestore";
 import { db } from "../firebase";
 import { MUSCLE_ICONS } from "../lib/muscleIcons";
-import { Zap } from "lucide-react";
+import { Zap, Flame } from "lucide-react";
 
 interface ProgramExercise {
   name: string;
@@ -105,6 +105,7 @@ export default function Home({ userId, userName }: HomeProps) {
   const [programs, setPrograms] = useState<Program[]>([]);
   const [loading, setLoading] = useState(true);
   const [suggestion, setSuggestion] = useState<{ program: Program; reason: string } | null>(null);
+  const [streak, setStreak] = useState(0);
   const navigate = useNavigate();
 
   const firstName = userName?.split(" ")[0] || "Warrior";
@@ -146,6 +147,19 @@ export default function Home({ userId, userName }: HomeProps) {
           .filter((w) => w.date >= cutoff);
 
         setSuggestion(pickNextProgram(programData, recentWorkouts));
+
+        // Calculate streak: consecutive calendar days with at least one workout (newest first)
+        const days = new Set(wSnap.docs.map((d) => d.data().date?.slice(0, 10)).filter(Boolean));
+        let s = 0;
+        const today = new Date();
+        for (let i = 0; i <= 365; i++) {
+          const d = new Date(today);
+          d.setDate(d.getDate() - i);
+          const key = d.toISOString().slice(0, 10);
+          if (days.has(key)) { s++; }
+          else if (i > 0) break; // gap found — stop (allow missing today)
+        }
+        setStreak(s);
       } catch {
         // suggestion is optional, fail silently
       }
@@ -168,9 +182,18 @@ export default function Home({ userId, userName }: HomeProps) {
           <h1 className="text-2xl font-black neon-text-pink uppercase tracking-widest text-center font-display neon-flicker">
             SUPERGAINZ
           </h1>
-          <p className="text-gray-400 text-xs text-center">
-            Hi {firstName} — pick a program and start your session.
-          </p>
+          <div className="flex items-center gap-3 mt-1">
+            <p className="text-gray-400 text-xs text-center">
+              Hi {firstName} — pick a program and start your session.
+            </p>
+            {streak > 0 && (
+              <div className="flex items-center gap-1 bg-orange-950/60 border border-orange-700/50 rounded-full px-2 py-0.5 shrink-0"
+                style={{ boxShadow: "0 0 8px rgba(251,146,60,0.3)" }}>
+                <Flame size={11} className="text-orange-400" />
+                <span className="text-orange-300 text-[10px] font-black font-display tracking-wider">{streak}</span>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
