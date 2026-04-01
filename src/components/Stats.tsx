@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
-import { collection, getDocs, orderBy, query } from "firebase/firestore";
+import { collection, getDocs, orderBy, query, addDoc, Timestamp } from "firebase/firestore";
 import { db } from "../firebase";
+import { Scale } from "lucide-react";
 import {
   LineChart,
   Line,
@@ -40,6 +41,17 @@ interface ChartPoint {
   flameWeight?: number;
 }
 
+interface BodyWeightEntry {
+  id: string;
+  date: string;
+  weight: number;
+}
+
+interface BwChartPoint {
+  date: string;
+  weight: number;
+}
+
 function formatDate(iso: string) {
   const d = new Date(iso);
   return `${d.getDate()}.${d.getMonth() + 1}.`;
@@ -75,23 +87,38 @@ function GlowDot(props: any) {
   );
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function BwTooltip({ active, payload, label }: any) {
+  if (!active || !payload?.length) return null;
+  return (
+    <div className="bg-[#141a29] border border-purple-900 rounded-xl px-3 py-2 text-xs shadow-[0_0_10px_rgba(251,146,60,0.2)]">
+      <p className="text-gray-400 mb-1">{label}</p>
+      <p className="text-orange-400 font-bold">{payload[0].value} kg</p>
+    </div>
+  );
+}
+
 export default function Stats({ userId }: StatsProps) {
+  const [tab, setTab] = useState<"lifts" | "bodyweight">("lifts");
+
+  // Lifts
   const [workouts, setWorkouts] = useState<Workout[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedExercise, setSelectedExercise] = useState<string>("");
 
+  // Body weight
+  const [bwEntries, setBwEntries] = useState<BodyWeightEntry[]>([]);
+  const [bwLoading, setBwLoading] = useState(false);
+  const [bwDate, setBwDate] = useState(new Date().toISOString().slice(0, 10));
+  const [bwValue, setBwValue] = useState("");
+  const [bwSaving, setBwSaving] = useState(false);
+
   useEffect(() => {
     async function fetchWorkouts() {
       try {
-        const q = query(
-          collection(db, "users", userId, "workouts"),
-          orderBy("date", "asc")
-        );
+        const q = query(collection(db, "users", userId, "workouts"), orderBy("date", "asc"));
         const snap = await getDocs(q);
-        const data: Workout[] = snap.docs.map((d) => ({
-          id: d.id,
-          ...(d.data() as Omit<Workout, "id">),
-        }));
+        const data: Workout[] = snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<Workout, "id">) }));
         setWorkouts(data);
         const first = data[0]?.exercises?.[0]?.name;
         if (first) setSelectedExercise(first);
@@ -103,6 +130,44 @@ export default function Stats({ userId }: StatsProps) {
     }
     fetchWorkouts();
   }, [userId]);
+
+  useEffect(() => {
+    if (tab !== "bodyweight") return;
+    async function fetchBw() {
+      setBwLoading(true);
+      try {
+        const q = query(collection(db, "users", userId, "bodyweight"), orderBy("date", "asc"));
+        const snap = await getDocs(q);
+        setBwEntries(snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<BodyWeightEntry, "id">) })));
+      } catch (err) {
+        console.error("Failed to fetch body weight:", err);
+      } finally {
+        setBwLoading(false);
+      }
+    }
+    fetchBw();
+  }, [tab, userId]);
+
+  async function saveBw() {
+    const w = parseFloat(bwValue);
+    if (!bwDate || isNaN(w) || w <= 0) return;
+    setBwSaving(true);
+    try {
+      const ref = await addDoc(collection(db, "users", userId, "bodyweight"), {
+        date: bwDate,
+        weight: w,
+        createdAt: Timestamp.now().toDate().toISOString(),
+      });
+      setBwEntries((prev) =>
+        [...prev, { id: ref.id, date: bwDate, weight: w }].sort((a, b) => a.date.localeCompare(b.date))
+      );
+      setBwValue("");
+    } catch (err) {
+      console.error("Failed to save body weight:", err);
+    } finally {
+      setBwSaving(false);
+    }
+  }
 
   const exerciseNames = Array.from(
     new Set(workouts.flatMap((w) => w.exercises.map((e) => e.name)))
@@ -134,14 +199,38 @@ export default function Stats({ userId }: StatsProps) {
 
   const pr = baseData.length ? Math.max(...baseData.map((d) => d.maxWeight)) : 0;
 
+  const bwChartData: BwChartPoint[] = bwEntries.map((e) => ({
+    date: formatDate(e.date),
+    weight: e.weight,
+  }));
+  const bwMin = bwChartData.length ? Math.min(...bwChartData.map((d) => d.weight)) : 0;
+  const bwMax = bwChartData.length ? Math.max(...bwChartData.map((d) => d.weight)) : 0;
+
   return (
     <div className="p-6 pb-8">
       <h2 className="text-3xl font-black neon-text-cyan mb-1 uppercase tracking-widest font-display neon-flicker">
         Stats
       </h2>
-      <p className="text-gray-400 text-sm mb-6">Track your progress over time.</p>
 
-      {loading ? (
+      {/* Tabs */}
+      <div className="flex gap-2 mb-6">
+        {(["lifts", "bodyweight"] as const).map((t) => (
+          <button
+            key={t}
+            onClick={() => setTab(t)}
+            className={`flex-1 py-2 rounded-xl text-xs font-bold uppercase tracking-widest font-display transition-colors ${
+              tab === t
+                ? "bg-[#141a29] border border-cyan-700 neon-text-cyan"
+                : "border border-purple-900/50 text-gray-500 hover:text-gray-300"
+            }`}
+          >
+            {t === "lifts" ? "Lifts" : "Body Weight"}
+          </button>
+        ))}
+      </div>
+
+      {/* ── LIFTS TAB ── */}
+      {tab === "lifts" && (loading ? (
         <p className="text-gray-400 text-center py-10">Loading workouts...</p>
       ) : workouts.length === 0 ? (
         <p className="text-gray-400 text-center py-10">
@@ -274,6 +363,121 @@ export default function Stats({ userId }: StatsProps) {
             {workouts.length} session{workouts.length !== 1 ? "s" : ""} logged total
           </p>
         </>
+      ))}
+
+      {/* ── BODY WEIGHT TAB ── */}
+      {tab === "bodyweight" && (
+        <div>
+          {/* Beta / privacy note */}
+          <div className="flex gap-2 bg-yellow-950/30 border border-yellow-800/50 rounded-2xl px-4 py-3 mb-5">
+            <Scale size={16} className="text-yellow-500 shrink-0 mt-0.5" />
+            <p className="text-yellow-300/80 text-xs leading-relaxed">
+              <span className="font-bold uppercase tracking-wider">Beta — käytä omalla vastuullasi.</span>{" "}
+              Paino on henkilökohtaista tietoa. Tämä tallennetaan vain omaan Firebase-tiliisi.
+              Ennen sovelluksen laajempaa julkaisua käyttöehdot ja GDPR-käytännöt tulee tarkistaa.
+            </p>
+          </div>
+
+          {/* Log form */}
+          <div className="bg-[#141a29] border border-purple-900 rounded-2xl p-4 mb-5">
+            <p className="text-gray-400 text-xs uppercase tracking-widest mb-3">Log weight</p>
+            <div className="flex gap-2">
+              <input
+                type="date"
+                value={bwDate}
+                onChange={(e) => setBwDate(e.target.value)}
+                className="bg-[#0b0f19] border border-purple-900/50 rounded-xl px-3 py-2 text-white text-sm focus:outline-none focus:border-pink-500 flex-1"
+              />
+              <input
+                type="number"
+                min={20}
+                max={300}
+                step={0.1}
+                placeholder="kg"
+                value={bwValue}
+                onChange={(e) => setBwValue(e.target.value)}
+                className="bg-[#0b0f19] border border-purple-900/50 rounded-xl px-3 py-2 text-white text-sm focus:outline-none focus:border-pink-500 w-24 text-center"
+              />
+              <button
+                onClick={saveBw}
+                disabled={bwSaving || !bwValue || !bwDate}
+                className="bg-gradient-to-r from-pink-500 to-purple-600 text-white text-xs font-bold uppercase tracking-wider px-4 rounded-xl disabled:opacity-50 shrink-0"
+              >
+                {bwSaving ? "..." : "Save"}
+              </button>
+            </div>
+          </div>
+
+          {/* Chart */}
+          {bwLoading ? (
+            <p className="text-gray-400 text-center py-10">Loading...</p>
+          ) : bwChartData.length < 2 ? (
+            <p className="text-gray-400 text-sm text-center py-6">
+              Log at least 2 entries to see your trend.
+            </p>
+          ) : (
+            <>
+              {/* Min/max summary */}
+              <div className="flex gap-3 mb-4">
+                <div className="flex-1 bg-[#141a29] border border-purple-900 rounded-2xl px-4 py-3 text-center">
+                  <p className="text-gray-500 text-[10px] uppercase tracking-widest mb-1">Lowest</p>
+                  <p className="text-orange-300 font-black text-xl font-display">{bwMin} kg</p>
+                </div>
+                <div className="flex-1 bg-[#141a29] border border-purple-900 rounded-2xl px-4 py-3 text-center">
+                  <p className="text-gray-500 text-[10px] uppercase tracking-widest mb-1">Latest</p>
+                  <p className="text-orange-400 font-black text-xl font-display">{bwChartData[bwChartData.length - 1].weight} kg</p>
+                </div>
+                <div className="flex-1 bg-[#141a29] border border-purple-900 rounded-2xl px-4 py-3 text-center">
+                  <p className="text-gray-500 text-[10px] uppercase tracking-widest mb-1">Highest</p>
+                  <p className="text-orange-300 font-black text-xl font-display">{bwMax} kg</p>
+                </div>
+              </div>
+
+              <div
+                className="border border-orange-900/30 rounded-2xl p-4 relative overflow-hidden"
+                style={{
+                  background: "#0b0f19",
+                  backgroundImage: `linear-gradient(rgba(251,146,60,0.04) 1px, transparent 1px), linear-gradient(90deg, rgba(251,146,60,0.04) 1px, transparent 1px)`,
+                  backgroundSize: "36px 36px",
+                  boxShadow: "0 0 20px rgba(251,146,60,0.06), inset 0 0 40px rgba(251,146,60,0.02)",
+                }}
+              >
+                <p className="text-gray-500 text-xs uppercase tracking-widest mb-4">Body weight (kg)</p>
+                <ResponsiveContainer width="100%" height={220}>
+                  <LineChart data={bwChartData} margin={{ top: 10, right: 10, left: -20, bottom: 5 }}>
+                    <defs>
+                      <filter id="glow-orange" x="-50%" y="-50%" width="200%" height="200%">
+                        <feGaussianBlur stdDeviation="3" result="blur" />
+                        <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
+                      </filter>
+                    </defs>
+                    <CartesianGrid strokeDasharray="4 4" stroke="rgba(251,146,60,0.06)" />
+                    <XAxis dataKey="date" tick={{ fill: "#4b5563", fontSize: 11 }} axisLine={{ stroke: "#1e2435" }} tickLine={false} />
+                    <YAxis
+                      domain={["auto", "auto"]}
+                      tick={{ fill: "#4b5563", fontSize: 11 }}
+                      axisLine={{ stroke: "#1e2435" }}
+                      tickLine={false}
+                    />
+                    <Tooltip content={<BwTooltip />} />
+                    <Line
+                      type="monotone"
+                      dataKey="weight"
+                      stroke="#fb923c"
+                      strokeWidth={2}
+                      filter="url(#glow-orange)"
+                      dot={(props) => (
+                        <GlowDot key={`bw-dot-${props.index}`} {...props} dataLength={bwChartData.length} isTrending={false} />
+                      )}
+                      activeDot={{ fill: "#fb923c", r: 6, strokeWidth: 0, filter: "url(#glow-orange)" }}
+                    />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+              <p className="text-gray-600 text-xs text-center mt-4">{bwEntries.length} entr{bwEntries.length !== 1 ? "ies" : "y"} logged</p>
+            </>
+          )}
+        </div>
       )}
     </div>
   );
