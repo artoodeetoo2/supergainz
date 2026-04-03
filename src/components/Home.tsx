@@ -162,9 +162,10 @@ export default function Home({ userId, userName }: HomeProps) {
         weekStart.setHours(0, 0, 0, 0);
         const weekStartStr = weekStart.toISOString().slice(0, 10);
 
-        const weekWorkouts = wSnap.docs
-          .map((d) => d.data() as { date: string; exercises: { name: string; sets: { weight: number; reps: number; completed: boolean }[] }[] })
-          .filter((w) => w.date?.slice(0, 10) >= weekStartStr);
+        type WorkoutDoc = { date: string; exercises: { name: string; sets: { weight: number; reps: number; completed: boolean }[] }[] };
+        const allDocs = wSnap.docs.map((d) => d.data() as WorkoutDoc);
+        const weekWorkouts = allDocs.filter((w) => w.date?.slice(0, 10) >= weekStartStr);
+        const prevWorkouts = allDocs.filter((w) => w.date?.slice(0, 10) < weekStartStr);
 
         if (weekWorkouts.length > 0) {
           const trainedDays = new Set(weekWorkouts.map((w) => w.date?.slice(0, 10)));
@@ -173,19 +174,42 @@ export default function Home({ userId, userName }: HomeProps) {
             d.setDate(weekStart.getDate() + i);
             return trainedDays.has(d.toISOString().slice(0, 10));
           });
+
+          // Max weight this week per exercise
+          const weekMax: Record<string, number> = {};
           let totalSets = 0;
-          let bestLift: { name: string; weight: number } | null = null;
           for (const w of weekWorkouts) {
             for (const ex of w.exercises ?? []) {
               for (const s of ex.sets ?? []) {
-                if (s.completed) {
-                  totalSets++;
-                  if (s.weight > (bestLift?.weight ?? 0)) bestLift = { name: ex.name, weight: s.weight };
-                }
+                if (!s.completed || s.weight <= 0) continue;
+                totalSets++;
+                if (s.weight > (weekMax[ex.name] ?? 0)) weekMax[ex.name] = s.weight;
               }
             }
           }
-          setWeekSummary({ sessions: weekWorkouts.length, sets: totalSets, bestLift, days });
+
+          // Max weight before this week per exercise
+          const prevMax: Record<string, number> = {};
+          for (const w of prevWorkouts) {
+            for (const ex of w.exercises ?? []) {
+              for (const s of ex.sets ?? []) {
+                if (!s.completed || s.weight <= 0) continue;
+                if (s.weight > (prevMax[ex.name] ?? 0)) prevMax[ex.name] = s.weight;
+              }
+            }
+          }
+
+          // Find biggest improvement (kg delta, only positive)
+          let topGain: { name: string; weight: number; delta: number } | null = null;
+          for (const [name, w] of Object.entries(weekMax)) {
+            const prev = prevMax[name] ?? 0;
+            const delta = w - prev;
+            if (delta > 0 && (!topGain || delta > topGain.delta)) {
+              topGain = { name, weight: w, delta };
+            }
+          }
+
+          setWeekSummary({ sessions: weekWorkouts.length, sets: totalSets, bestLift: topGain ? { name: topGain.name, weight: topGain.delta } : null, days });
         }
 
         // Calculate streak: consecutive calendar days with at least one workout (newest first)
@@ -287,8 +311,8 @@ export default function Home({ userId, userName }: HomeProps) {
                 <p className="text-gray-500 text-[10px] uppercase tracking-wider">Sets done</p>
               </div>
               {weekSummary.bestLift && (
-                <div className="max-w-[120px]">
-                  <p className="neon-text-cyan font-black font-display text-lg">{weekSummary.bestLift.weight} kg</p>
+                <div className="max-w-[110px] text-center">
+                  <p className="neon-text-cyan font-black font-display text-lg">+{weekSummary.bestLift.weight} kg</p>
                   <p className="text-gray-500 text-[10px] uppercase tracking-wider truncate">{weekSummary.bestLift.name}</p>
                 </div>
               )}
