@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { collection, getDocs, query, orderBy, limit } from "firebase/firestore";
 import { db } from "../firebase";
 import { MUSCLE_ICONS } from "../lib/muscleIcons";
-import { Zap, Flame } from "lucide-react";
+import { Zap, Flame, BarChart2 } from "lucide-react";
 
 interface ProgramExercise {
   name: string;
@@ -106,6 +106,12 @@ export default function Home({ userId, userName }: HomeProps) {
   const [loading, setLoading] = useState(true);
   const [suggestion, setSuggestion] = useState<{ program: Program; reason: string } | null>(null);
   const [streak, setStreak] = useState(0);
+  const [weekSummary, setWeekSummary] = useState<{
+    sessions: number;
+    sets: number;
+    bestLift: { name: string; weight: number } | null;
+    days: boolean[]; // Mon-Sun, true = trained
+  } | null>(null);
   const navigate = useNavigate();
 
   const firstName = userName?.split(" ")[0] || "Warrior";
@@ -147,6 +153,40 @@ export default function Home({ userId, userName }: HomeProps) {
           .filter((w) => w.date >= cutoff);
 
         setSuggestion(pickNextProgram(programData, recentWorkouts));
+
+        // Weekly summary — current Mon–Sun
+        const now = new Date();
+        const dayOfWeek = (now.getDay() + 6) % 7; // Mon=0 … Sun=6
+        const weekStart = new Date(now);
+        weekStart.setDate(now.getDate() - dayOfWeek);
+        weekStart.setHours(0, 0, 0, 0);
+        const weekStartStr = weekStart.toISOString().slice(0, 10);
+
+        const weekWorkouts = wSnap.docs
+          .map((d) => d.data() as { date: string; exercises: { name: string; sets: { weight: number; reps: number; completed: boolean }[] }[] })
+          .filter((w) => w.date?.slice(0, 10) >= weekStartStr);
+
+        if (weekWorkouts.length > 0) {
+          const trainedDays = new Set(weekWorkouts.map((w) => w.date?.slice(0, 10)));
+          const days = Array.from({ length: 7 }, (_, i) => {
+            const d = new Date(weekStart);
+            d.setDate(weekStart.getDate() + i);
+            return trainedDays.has(d.toISOString().slice(0, 10));
+          });
+          let totalSets = 0;
+          let bestLift: { name: string; weight: number } | null = null;
+          for (const w of weekWorkouts) {
+            for (const ex of w.exercises ?? []) {
+              for (const s of ex.sets ?? []) {
+                if (s.completed) {
+                  totalSets++;
+                  if (s.weight > (bestLift?.weight ?? 0)) bestLift = { name: ex.name, weight: s.weight };
+                }
+              }
+            }
+          }
+          setWeekSummary({ sessions: weekWorkouts.length, sets: totalSets, bestLift, days });
+        }
 
         // Calculate streak: consecutive calendar days with at least one workout (newest first)
         const days = new Set(wSnap.docs.map((d) => d.data().date?.slice(0, 10)).filter(Boolean));
@@ -216,6 +256,43 @@ export default function Home({ userId, userName }: HomeProps) {
             >
               Start Now
             </button>
+          </div>
+        )}
+
+        {/* Weekly summary */}
+        {weekSummary && (
+          <div className="mb-4 rounded-2xl border border-purple-900/60 bg-[#141a29] p-4">
+            <div className="flex items-center gap-2 mb-3">
+              <BarChart2 size={13} className="text-purple-400 shrink-0" />
+              <span className="text-purple-400 text-[10px] font-bold uppercase tracking-widest font-display">This week</span>
+            </div>
+            {/* Day dots Mon–Sun */}
+            <div className="flex gap-1.5 mb-3">
+              {["M","T","W","T","F","S","S"].map((d, i) => (
+                <div key={i} className="flex-1 flex flex-col items-center gap-1">
+                  <div className={`w-full h-1.5 rounded-full ${weekSummary.days[i] ? "bg-purple-400" : "bg-gray-800"}`}
+                    style={weekSummary.days[i] ? { boxShadow: "0 0 6px rgba(192,132,252,0.6)" } : {}} />
+                  <span className="text-[9px] text-gray-600 font-display">{d}</span>
+                </div>
+              ))}
+            </div>
+            {/* Stats row */}
+            <div className="flex justify-between text-center">
+              <div>
+                <p className="text-white font-black font-display text-lg">{weekSummary.sessions}</p>
+                <p className="text-gray-500 text-[10px] uppercase tracking-wider">Sessions</p>
+              </div>
+              <div>
+                <p className="text-white font-black font-display text-lg">{weekSummary.sets}</p>
+                <p className="text-gray-500 text-[10px] uppercase tracking-wider">Sets done</p>
+              </div>
+              {weekSummary.bestLift && (
+                <div className="max-w-[120px]">
+                  <p className="neon-text-cyan font-black font-display text-lg">{weekSummary.bestLift.weight} kg</p>
+                  <p className="text-gray-500 text-[10px] uppercase tracking-wider truncate">{weekSummary.bestLift.name}</p>
+                </div>
+              )}
+            </div>
           </div>
         )}
 
