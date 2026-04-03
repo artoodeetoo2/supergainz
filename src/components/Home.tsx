@@ -199,11 +199,11 @@ export default function Home({ userId, userName }: HomeProps) {
             }
           }
 
-          // Find biggest improvement (kg delta, only positive)
+          // Find biggest improvement — only exercises with prior history
           let topGain: { name: string; weight: number; delta: number } | null = null;
           for (const [name, w] of Object.entries(weekMax)) {
-            const prev = prevMax[name] ?? 0;
-            const delta = w - prev;
+            if (!(name in prevMax)) continue; // no history → skip
+            const delta = w - prevMax[name];
             if (delta > 0 && (!topGain || delta > topGain.delta)) {
               topGain = { name, weight: w, delta };
             }
