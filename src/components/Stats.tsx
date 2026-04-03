@@ -98,13 +98,22 @@ function BwTooltip({ active, payload, label }: any) {
   );
 }
 
+function epley(weight: number, reps: number): number {
+  if (reps === 1) return weight;
+  return Math.round(weight * (1 + reps / 30) * 10) / 10;
+}
+
 export default function Stats({ userId }: StatsProps) {
-  const [tab, setTab] = useState<"lifts" | "bodyweight">("lifts");
+  const [tab, setTab] = useState<"lifts" | "bodyweight" | "1rm">("lifts");
 
   // Lifts
   const [workouts, setWorkouts] = useState<Workout[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedExercise, setSelectedExercise] = useState<string>("");
+
+  // 1RM calculator
+  const [rmWeight, setRmWeight] = useState("");
+  const [rmReps, setRmReps] = useState("");
 
   // Body weight
   const [bwEntries, setBwEntries] = useState<BodyWeightEntry[]>([]);
@@ -214,17 +223,21 @@ export default function Stats({ userId }: StatsProps) {
 
       {/* Tabs */}
       <div className="flex gap-2 mb-6">
-        {(["lifts", "bodyweight"] as const).map((t) => (
+        {([
+          { key: "lifts", label: "Lifts" },
+          { key: "1rm", label: "1RM" },
+          { key: "bodyweight", label: "Weight" },
+        ] as const).map(({ key, label }) => (
           <button
-            key={t}
-            onClick={() => setTab(t)}
+            key={key}
+            onClick={() => setTab(key)}
             className={`flex-1 py-2 rounded-xl text-xs font-bold uppercase tracking-widest font-display transition-colors ${
-              tab === t
+              tab === key
                 ? "bg-[#141a29] border border-cyan-700 neon-text-cyan"
                 : "border border-purple-900/50 text-gray-500 hover:text-gray-300"
             }`}
           >
-            {t === "lifts" ? "Lifts" : "Body Weight"}
+            {label}
           </button>
         ))}
       </div>
@@ -364,6 +377,94 @@ export default function Stats({ userId }: StatsProps) {
           </p>
         </>
       ))}
+
+      {/* ── 1RM TAB ── */}
+      {tab === "1rm" && (() => {
+        const w = parseFloat(rmWeight);
+        const r = parseInt(rmReps);
+        const result = !isNaN(w) && !isNaN(r) && w > 0 && r > 0 ? epley(w, r) : null;
+
+        // Build best-set 1RM per exercise from workout history
+        const bestSets: Record<string, { weight: number; reps: number; estimated1rm: number }> = {};
+        for (const workout of workouts) {
+          for (const ex of workout.exercises) {
+            for (const s of ex.sets) {
+              if (!s.completed || s.weight <= 0 || s.reps <= 0) continue;
+              const est = epley(s.weight, s.reps);
+              if (!bestSets[ex.name] || est > bestSets[ex.name].estimated1rm) {
+                bestSets[ex.name] = { weight: s.weight, reps: s.reps, estimated1rm: est };
+              }
+            }
+          }
+        }
+        const sorted = Object.entries(bestSets).sort((a, b) => b[1].estimated1rm - a[1].estimated1rm);
+
+        return (
+          <div>
+            {/* Calculator */}
+            <div className="bg-[#141a29] border border-purple-900 rounded-2xl p-4 mb-5">
+              <p className="text-gray-400 text-xs uppercase tracking-widest mb-3">Epley 1RM Calculator</p>
+              <div className="flex gap-2 mb-3">
+                <div className="flex-1">
+                  <label className="text-gray-500 text-[10px] uppercase tracking-widest block mb-1">Weight (kg)</label>
+                  <input
+                    type="number" min={0} step={0.5} placeholder="100"
+                    value={rmWeight} onChange={(e) => setRmWeight(e.target.value)}
+                    className="bg-[#0b0f19] border border-purple-900/50 rounded-xl px-3 py-2 text-white text-sm w-full text-center focus:outline-none focus:border-pink-500"
+                  />
+                </div>
+                <div className="flex-1">
+                  <label className="text-gray-500 text-[10px] uppercase tracking-widest block mb-1">Reps</label>
+                  <input
+                    type="number" min={1} max={30} placeholder="5"
+                    value={rmReps} onChange={(e) => setRmReps(e.target.value)}
+                    className="bg-[#0b0f19] border border-purple-900/50 rounded-xl px-3 py-2 text-white text-sm w-full text-center focus:outline-none focus:border-pink-500"
+                  />
+                </div>
+              </div>
+              {result !== null ? (
+                <div className="text-center py-3 rounded-xl bg-pink-950/20 border border-pink-900/40">
+                  <p className="text-gray-400 text-[10px] uppercase tracking-widest mb-1">Estimated 1RM</p>
+                  <p className="font-black font-display neon-text-pink text-4xl tracking-widest" style={{ textShadow: "0 0 20px rgba(255,0,127,0.6)" }}>
+                    {result} <span className="text-2xl">kg</span>
+                  </p>
+                  <p className="text-gray-600 text-[10px] mt-1">weight × (1 + reps/30)</p>
+                </div>
+              ) : (
+                <div className="text-center py-3 rounded-xl bg-[#0b0f19] border border-purple-900/30">
+                  <p className="text-gray-600 text-xs">Enter weight and reps above</p>
+                </div>
+              )}
+            </div>
+
+            {/* History from logged workouts */}
+            {sorted.length > 0 && (
+              <div>
+                <p className="text-gray-500 text-[10px] uppercase tracking-widest mb-3">Estimated 1RM from history</p>
+                <div className="space-y-2">
+                  {sorted.map(([name, data]) => (
+                    <div key={name} className="bg-[#141a29] border border-purple-900 rounded-2xl px-4 py-3 flex items-center justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="text-white text-sm font-semibold truncate">{name}</p>
+                        <p className="text-gray-500 text-xs mt-0.5">{data.weight}kg × {data.reps} reps</p>
+                      </div>
+                      <p className="font-black font-display neon-text-cyan text-xl tracking-widest shrink-0">
+                        {data.estimated1rm} kg
+                      </p>
+                    </div>
+                  ))}
+                </div>
+                <p className="text-gray-700 text-[10px] text-center mt-4 uppercase tracking-widest">
+                  Based on best completed set per exercise · Epley formula
+                </p>
+              </div>
+            )}
+            {sorted.length === 0 && !loading && (
+              <p className="text-gray-400 text-sm text-center py-6">No workout history yet.</p>
+            )}
+          </div>
+        );
+      })()}
 
       {/* ── BODY WEIGHT TAB ── */}
       {tab === "bodyweight" && (
