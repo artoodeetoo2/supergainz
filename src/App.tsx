@@ -1,5 +1,5 @@
 import { Routes, Route, Link, Navigate, useLocation } from "react-router-dom";
-import { Dumbbell, LineChart, User, Play } from "lucide-react";
+import { Dumbbell, LineChart, User, Play, WifiOff } from "lucide-react";
 import { useState, useEffect } from "react";
 import { auth } from "./firebase";
 import { onAuthStateChanged } from "firebase/auth";
@@ -13,9 +13,24 @@ import Stats from "./components/Stats";
 function AppRoutes({ user }: { user: any }) {
   const location = useLocation();
   const isWorkout = location.pathname === "/workout";
+  const [isOnline, setIsOnline] = useState(navigator.onLine);
+
+  useEffect(() => {
+    const on = () => setIsOnline(true);
+    const off = () => setIsOnline(false);
+    window.addEventListener("online", on);
+    window.addEventListener("offline", off);
+    return () => { window.removeEventListener("online", on); window.removeEventListener("offline", off); };
+  }, []);
 
   return (
     <div className="flex flex-col h-screen w-full bg-[#0b0f19] text-white font-sans">
+      {!isOnline && (
+        <div className="w-full bg-yellow-900/80 border-b border-yellow-700/50 px-4 py-1.5 flex items-center justify-center gap-2 z-50">
+          <WifiOff size={12} className="text-yellow-400" />
+          <span className="text-yellow-300 text-[11px] font-bold uppercase tracking-widest font-display">Offline — changes will sync when connected</span>
+        </div>
+      )}
       <main className={`flex-1 overflow-y-auto w-full max-w-md mx-auto relative ${isWorkout ? "" : "pb-20"}`}>
         <Routes>
           <Route path="/" element={<Home userId={user.uid} userName={user.displayName || ""} />} />
