@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
-import { collection, getDocs, orderBy, query, addDoc, Timestamp } from "firebase/firestore";
+import { collection, getDocs, orderBy, query, addDoc, Timestamp, deleteDoc, doc } from "firebase/firestore";
 import { db } from "../firebase";
-import { Scale } from "lucide-react";
+import { Scale, ChevronDown, Trash2 } from "lucide-react";
 import {
   LineChart,
   Line,
@@ -104,7 +104,7 @@ function epley(weight: number, reps: number): number {
 }
 
 export default function Stats({ userId }: StatsProps) {
-  const [tab, setTab] = useState<"lifts" | "bodyweight" | "1rm">("lifts");
+  const [tab, setTab] = useState<"lifts" | "bodyweight" | "1rm" | "history">("lifts");
 
   // Lifts
   const [workouts, setWorkouts] = useState<Workout[]>([]);
@@ -121,6 +121,7 @@ export default function Stats({ userId }: StatsProps) {
   const [bwDate, setBwDate] = useState(new Date().toISOString().slice(0, 10));
   const [bwValue, setBwValue] = useState("");
   const [bwSaving, setBwSaving] = useState(false);
+  const [expandedWorkoutId, setExpandedWorkoutId] = useState<string | null>(null);
 
   useEffect(() => {
     async function fetchWorkouts() {
@@ -178,6 +179,15 @@ export default function Stats({ userId }: StatsProps) {
     }
   }
 
+  async function deleteBw(id: string) {
+    try {
+      await deleteDoc(doc(db, "users", userId, "bodyweight", id));
+      setBwEntries((prev) => prev.filter((e) => e.id !== id));
+    } catch (err) {
+      console.error("Failed to delete body weight:", err);
+    }
+  }
+
   const exerciseNames = Array.from(
     new Set(workouts.flatMap((w) => w.exercises.map((e) => e.name)))
   ).sort();
@@ -227,6 +237,7 @@ export default function Stats({ userId }: StatsProps) {
           { key: "lifts", label: "Lifts" },
           { key: "1rm", label: "1RM" },
           { key: "bodyweight", label: "Weight" },
+          { key: "history", label: "History" },
         ] as const).map(({ key, label }) => (
           <button
             key={key}
@@ -578,8 +589,77 @@ export default function Stats({ userId }: StatsProps) {
               <p className="text-gray-600 text-xs text-center mt-4">{bwEntries.length} entr{bwEntries.length !== 1 ? "ies" : "y"} logged</p>
             </>
           )}
+
+          {/* Entry list with delete */}
+          {!bwLoading && bwEntries.length > 0 && (
+            <div className="mt-5">
+              <p className="text-gray-500 text-[10px] uppercase tracking-widest mb-2">All entries</p>
+              <div className="space-y-1.5">
+                {[...bwEntries].reverse().map((entry) => (
+                  <div key={entry.id} className="flex items-center justify-between bg-[#141a29] border border-purple-900/50 rounded-xl px-4 py-2.5">
+                    <span className="text-gray-400 text-xs">{formatDate(entry.date)}</span>
+                    <span className="text-orange-300 font-bold text-sm">{entry.weight} kg</span>
+                    <button
+                      onClick={() => deleteBw(entry.id)}
+                      className="text-gray-600 hover:text-red-500 transition-colors p-1"
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       )}
+
+      {/* ── HISTORY TAB ── */}
+      {tab === "history" && (() => {
+        if (loading) return <p className="text-gray-400 text-center py-10">Loading...</p>;
+        if (workouts.length === 0) return <p className="text-gray-400 text-center py-10">No workouts logged yet.</p>;
+        const sorted = [...workouts].reverse();
+        return (
+          <div className="space-y-2">
+            {sorted.map((w) => {
+              const isExpanded = expandedWorkoutId === w.id;
+              const d = new Date(w.date);
+              const dateStr = `${d.getDate()}.${d.getMonth() + 1}.${d.getFullYear()}`;
+              const completedSets = w.exercises.reduce((acc, ex) => acc + ex.sets.filter((s) => s.completed).length, 0);
+              const totalSets = w.exercises.reduce((acc, ex) => acc + ex.sets.length, 0);
+              return (
+                <div key={w.id} className="bg-[#141a29] border border-purple-900 rounded-2xl overflow-hidden">
+                  <button
+                    className="w-full px-4 py-3 flex items-center justify-between gap-3 text-left"
+                    onClick={() => setExpandedWorkoutId(isExpanded ? null : w.id)}
+                  >
+                    <div className="flex-1 min-w-0">
+                      <p className="font-bold text-white text-sm truncate">{w.programName}</p>
+                      <p className="text-gray-500 text-xs mt-0.5">{dateStr} · {completedSets}/{totalSets} sets</p>
+                    </div>
+                    <ChevronDown size={16} className={`text-gray-500 shrink-0 transition-transform ${isExpanded ? "rotate-180" : ""}`} />
+                  </button>
+                  {isExpanded && (
+                    <div className="px-4 pb-3 border-t border-purple-900/50 pt-3 space-y-1.5">
+                      {w.exercises.map((ex, i) => {
+                        const done = ex.sets.filter((s) => s.completed && s.weight > 0);
+                        const maxW = done.length ? Math.max(...done.map((s) => s.weight)) : 0;
+                        return (
+                          <div key={i} className="flex items-center justify-between text-xs">
+                            <span className="text-gray-300 truncate flex-1">{ex.name}</span>
+                            <span className="text-gray-500 shrink-0 ml-2">
+                              {done.length}/{ex.sets.length} sets{maxW > 0 ? ` · ${maxW}kg` : ""}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        );
+      })()}
     </div>
   );
 }

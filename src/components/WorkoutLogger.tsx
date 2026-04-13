@@ -41,6 +41,9 @@ const ZYZZ_GIFS = [
   "/gifs/zyzz-dancing.webp",
   "/gifs/zyzz-flexing.webp",
   "/gifs/zyzz-mirin.webp",
+  "/gifs/zyzz-yesbrah.webp",
+  "/gifs/zyzz-dance.webp",
+  "/gifs/zyzz-pull.webp",
 ];
 
 const VOICE_LINES = [

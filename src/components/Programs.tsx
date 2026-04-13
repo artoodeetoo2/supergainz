@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { ChevronLeft, Trash2, Sparkles, Bot, ChevronRight } from "lucide-react";
+import { ChevronLeft, Trash2, Sparkles, Bot, ChevronRight, Pencil, Check, X } from "lucide-react";
 import { MUSCLE_ICONS } from "../lib/muscleIcons";
 import { db } from "../firebase";
 import {
@@ -177,6 +177,14 @@ export default function Programs({ userId }: ProgramsProps) {
   const [showAddExercise, setShowAddExercise] = useState(false);
   const [exerciseForm, setExerciseForm] = useState(defaultExerciseForm);
   const [savingExercise, setSavingExercise] = useState(false);
+
+  // Edit exercise state
+  const [editingExerciseIdx, setEditingExerciseIdx] = useState<number | null>(null);
+  const [editExerciseForm, setEditExerciseForm] = useState(defaultExerciseForm);
+  const [savingEditExercise, setSavingEditExercise] = useState(false);
+  // Edit program name state
+  const [editingProgramName, setEditingProgramName] = useState(false);
+  const [programNameInput, setProgramNameInput] = useState("");
 
   const programsRef = collection(db, "users", userId, "programs");
 
@@ -572,6 +580,50 @@ Respond ONLY with a valid JSON array, no markdown, no explanation:
 
   // ── Detail view ─────────────────────────────────────────────────────────────
 
+  // ── Edit exercise / program name handlers ───────────────────────────────────
+
+  const handleEditExerciseSave = async () => {
+    if (editingExerciseIdx === null || !selectedProgram) return;
+    setSavingEditExercise(true);
+    try {
+      const updatedExercises = selectedProgram.exercises.map((ex, i) =>
+        i === editingExerciseIdx
+          ? { ...ex, name: editExerciseForm.name.trim(), muscleGroup: editExerciseForm.muscleGroup, sets: Number(editExerciseForm.sets), reps: Number(editExerciseForm.reps), weight: Number(editExerciseForm.weight) }
+          : ex
+      );
+      await updateDoc(doc(db, "users", userId, "programs", selectedProgram.id), { exercises: updatedExercises });
+      const updatedProgram = { ...selectedProgram, exercises: updatedExercises };
+      setSelectedProgram(updatedProgram);
+      setPrograms((prev) => {
+        const next = prev.map((p) => (p.id === selectedProgram.id ? updatedProgram : p));
+        sessionStorage.setItem(cacheKey, JSON.stringify(next));
+        return next;
+      });
+      setEditingExerciseIdx(null);
+    } catch (err) {
+      console.error("Failed to edit exercise:", err);
+    } finally {
+      setSavingEditExercise(false);
+    }
+  };
+
+  const handleProgramNameSave = async () => {
+    if (!selectedProgram || !programNameInput.trim()) return;
+    try {
+      await updateDoc(doc(db, "users", userId, "programs", selectedProgram.id), { name: programNameInput.trim() });
+      const updatedProgram = { ...selectedProgram, name: programNameInput.trim() };
+      setSelectedProgram(updatedProgram);
+      setPrograms((prev) => {
+        const next = prev.map((p) => (p.id === selectedProgram.id ? updatedProgram : p));
+        sessionStorage.setItem(cacheKey, JSON.stringify(next));
+        return next;
+      });
+      setEditingProgramName(false);
+    } catch (err) {
+      console.error("Failed to rename program:", err);
+    }
+  };
+
   // ── Coach UI ────────────────────────────────────────────────────────────────
 
   if (selectedProgram && coachStep) {
@@ -700,6 +752,8 @@ Respond ONLY with a valid JSON array, no markdown, no explanation:
             setSelectedProgram(null);
             setShowAddExercise(false);
             setExerciseForm(defaultExerciseForm);
+            setEditingExerciseIdx(null);
+            setEditingProgramName(false);
           }}
           className="flex items-center gap-1 text-gray-400 hover:text-cyan-400 transition-colors mb-5 text-sm font-semibold uppercase tracking-widest"
         >
@@ -708,9 +762,33 @@ Respond ONLY with a valid JSON array, no markdown, no explanation:
         </button>
 
         {/* Title */}
-        <h2 className="text-3xl font-black neon-text-cyan mb-2 uppercase tracking-widest font-display neon-flicker">
-          {selectedProgram.name}
-        </h2>
+        {editingProgramName ? (
+          <div className="flex items-center gap-2 mb-2">
+            <input
+              value={programNameInput}
+              onChange={(e) => setProgramNameInput(e.target.value)}
+              className="bg-[#0b0f19] border border-pink-500 rounded-xl px-3 py-2 text-white font-black uppercase tracking-wider font-display text-xl flex-1 focus:outline-none"
+            />
+            <button onClick={handleProgramNameSave} disabled={!programNameInput.trim()} className="text-green-400 hover:text-green-300 transition-colors p-1 disabled:opacity-40">
+              <Check size={20} />
+            </button>
+            <button onClick={() => setEditingProgramName(false)} className="text-gray-500 hover:text-gray-300 transition-colors p-1">
+              <X size={20} />
+            </button>
+          </div>
+        ) : (
+          <div className="flex items-center gap-2 mb-2">
+            <h2 className="text-3xl font-black neon-text-cyan uppercase tracking-widest font-display neon-flicker flex-1">
+              {selectedProgram.name}
+            </h2>
+            <button
+              onClick={() => { setEditingProgramName(true); setProgramNameInput(selectedProgram.name); }}
+              className="text-gray-600 hover:text-cyan-400 transition-colors shrink-0 p-1"
+            >
+              <Pencil size={16} />
+            </button>
+          </div>
+        )}
 
         {/* Muscle group tags */}
         <div className="mb-6">
@@ -733,26 +811,85 @@ Respond ONLY with a valid JSON array, no markdown, no explanation:
               No exercises yet. Add one below!
             </p>
           ) : (
-            selectedProgram.exercises.map((ex, i) => (
-              <div
-                key={i}
-                className="bg-[#141a29] border border-purple-900 rounded-2xl px-4 py-3 flex items-center justify-between gap-3"
-              >
-                <div className="flex-1 min-w-0">
-                  <p className="font-bold truncate neon-text-cyan" style={{ fontSize: "13px" }}>{ex.name}</p>
-                  <p className="text-gray-500 text-xs mt-0.5 font-display tracking-widest">
-                    {ex.sets}×{ex.reps} @ {ex.weight}kg
-                  </p>
+            selectedProgram.exercises.map((ex, i) => {
+              if (editingExerciseIdx === i) {
+                return (
+                  <div key={i} className="bg-[#141a29] border border-pink-800/60 rounded-2xl p-4 space-y-3">
+                    <p className="text-pink-400 text-xs font-bold uppercase tracking-widest">Edit Exercise</p>
+                    <div>
+                      <label className="text-gray-400 text-xs uppercase tracking-widest mb-1 block">Name</label>
+                      <input type="text" value={editExerciseForm.name}
+                        onChange={(e) => setEditExerciseForm((f) => ({ ...f, name: e.target.value }))}
+                        className="bg-[#0b0f19] border border-purple-900/50 rounded-xl px-4 py-2 text-white w-full focus:outline-none focus:border-pink-500" />
+                    </div>
+                    <div>
+                      <label className="text-gray-400 text-xs uppercase tracking-widest mb-1 block">Muscle Group</label>
+                      <select value={editExerciseForm.muscleGroup}
+                        onChange={(e) => setEditExerciseForm((f) => ({ ...f, muscleGroup: e.target.value }))}
+                        className="bg-[#0b0f19] border border-purple-900/50 rounded-xl px-4 py-2 text-white w-full focus:outline-none focus:border-pink-500">
+                        {MUSCLE_GROUP_OPTIONS.map((mg) => (
+                          <option key={mg} value={mg}>{mg.charAt(0).toUpperCase() + mg.slice(1)}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="grid grid-cols-3 gap-2">
+                      <div>
+                        <label className="text-gray-400 text-xs uppercase tracking-widest mb-1 block">Sets</label>
+                        <input type="number" min={1} value={editExerciseForm.sets}
+                          onChange={(e) => setEditExerciseForm((f) => ({ ...f, sets: Number(e.target.value) }))}
+                          className="bg-[#0b0f19] border border-purple-900/50 rounded-xl px-3 py-2 text-white w-full focus:outline-none focus:border-pink-500" />
+                      </div>
+                      <div>
+                        <label className="text-gray-400 text-xs uppercase tracking-widest mb-1 block">Reps</label>
+                        <input type="number" min={1} value={editExerciseForm.reps}
+                          onChange={(e) => setEditExerciseForm((f) => ({ ...f, reps: Number(e.target.value) }))}
+                          className="bg-[#0b0f19] border border-purple-900/50 rounded-xl px-3 py-2 text-white w-full focus:outline-none focus:border-pink-500" />
+                      </div>
+                      <div>
+                        <label className="text-gray-400 text-xs uppercase tracking-widest mb-1 block">Weight kg</label>
+                        <input type="number" min={0} step={0.5} value={editExerciseForm.weight}
+                          onChange={(e) => setEditExerciseForm((f) => ({ ...f, weight: Number(e.target.value) }))}
+                          className="bg-[#0b0f19] border border-purple-900/50 rounded-xl px-3 py-2 text-white w-full focus:outline-none focus:border-pink-500" />
+                      </div>
+                    </div>
+                    <div className="flex gap-2 pt-1">
+                      <button onClick={handleEditExerciseSave} disabled={savingEditExercise || !editExerciseForm.name.trim()}
+                        className="bg-gradient-to-r from-pink-500 to-purple-600 px-6 py-2 rounded-xl font-bold text-white flex-1 disabled:opacity-50">
+                        {savingEditExercise ? "Saving..." : "Save"}
+                      </button>
+                      <button onClick={() => setEditingExerciseIdx(null)}
+                        className="border border-purple-900 px-4 py-2 rounded-xl text-gray-400 hover:text-white transition-colors">
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                );
+              }
+              return (
+                <div key={i} className="bg-[#141a29] border border-purple-900 rounded-2xl px-4 py-3 flex items-center justify-between gap-3">
+                  <div className="flex-1 min-w-0">
+                    <p className="font-bold truncate neon-text-cyan" style={{ fontSize: "13px" }}>{ex.name}</p>
+                    <p className="text-gray-500 text-xs mt-0.5 font-display tracking-widest">
+                      {ex.sets}×{ex.reps} @ {ex.weight}kg
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => { setEditingExerciseIdx(i); setEditExerciseForm({ name: ex.name, muscleGroup: ex.muscleGroup, sets: ex.sets, reps: ex.reps, weight: ex.weight }); }}
+                    className="text-gray-600 hover:text-cyan-400 transition-colors flex-shrink-0 p-1"
+                    aria-label="Edit exercise"
+                  >
+                    <Pencil size={16} />
+                  </button>
+                  <button
+                    onClick={() => handleDeleteExercise(selectedProgram, i)}
+                    className="text-gray-600 hover:text-red-500 transition-colors flex-shrink-0 p-1"
+                    aria-label="Delete exercise"
+                  >
+                    <Trash2 size={18} />
+                  </button>
                 </div>
-                <button
-                  onClick={() => handleDeleteExercise(selectedProgram, i)}
-                  className="text-gray-600 hover:text-red-500 transition-colors flex-shrink-0 p-1"
-                  aria-label="Delete exercise"
-                >
-                  <Trash2 size={18} />
-                </button>
-              </div>
-            ))
+              );
+            })
           )}
         </div>
 
