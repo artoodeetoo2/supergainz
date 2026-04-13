@@ -484,9 +484,9 @@ export default function Stats({ userId }: StatsProps) {
           <div className="flex gap-2 bg-yellow-950/30 border border-yellow-800/50 rounded-2xl px-4 py-3 mb-5">
             <Scale size={16} className="text-yellow-500 shrink-0 mt-0.5" />
             <p className="text-yellow-300/80 text-xs leading-relaxed">
-              <span className="font-bold uppercase tracking-wider">Beta — käytä omalla vastuullasi.</span>{" "}
-              Paino on henkilökohtaista tietoa. Tämä tallennetaan vain omaan Firebase-tiliisi.
-              Ennen sovelluksen laajempaa julkaisua käyttöehdot ja GDPR-käytännöt tulee tarkistaa.
+              <span className="font-bold uppercase tracking-wider">Beta — use at your own risk.</span>{" "}
+              Your weight data is personal. It is stored only in your own Firebase account.
+              Terms of service and GDPR policies should be reviewed before a wider release.
             </p>
           </div>
 
